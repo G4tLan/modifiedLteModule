@@ -1,0 +1,16 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "intelliSenseMode": "clang-x64",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/../../build/**"
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "compileCommands": "/home/19p29/Desktop/project/ns-allinone-3.29/ns-3.29/build/compile_commands.json"
+        }
+    ],
+    "version": 4
+}

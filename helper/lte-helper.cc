@@ -857,6 +857,7 @@ LteHelper::InstallSingleUeDevice (Ptr<Node> n)
   ccmUe->SetNumberOfComponentCarriers (m_noOfCcs);
 
   Ptr<LteUeRrc> rrc = CreateObject<LteUeRrc> ();
+  rrc->setNode(n);
   rrc->m_numberOfComponentCarriers = m_noOfCcs;
   // run intializeSap to create the proper number of sap provider/users
   rrc->InitializeSap();

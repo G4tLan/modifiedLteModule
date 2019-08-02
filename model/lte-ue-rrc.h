@@ -35,6 +35,7 @@
 #include <ns3/traced-callback.h>
 #include "ns3/component-carrier-ue.h"
 #include <ns3/lte-ue-ccm-rrc-sap.h>
+#include <ns3/node.h>
 #include <vector>
 
 #include <map>
@@ -125,6 +126,9 @@ public:
    */
   LteUeRrc ();
 
+  void setNode(Ptr<Node> n){
+    ueNode = n; //set ue
+  }
 
   /**
    * Destructor
@@ -1165,6 +1169,8 @@ private:
    * \brief Invoked after timer T300 expires, notifying upper layers that RRC
    *        connection establishment procedure has failed.
    */
+
+  Ptr<ns3::Node> ueNode;
   void ConnectionTimeout ();
 
 public:

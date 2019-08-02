@@ -1098,6 +1098,8 @@ UeManager::RecvMeasurementReport (LteRrcSap::MeasurementReport msg)
         }
     }
 
+  std::cout << msg.measResults.uePosition << " rcvmsmntrpt" << std::endl;
+
   ///Report any measurements to ComponentCarrierManager, so it can react to any change or activate the SCC
   m_rrc->m_ccmRrcSapProvider->ReportUeMeas (m_rnti, msg.measResults);
   // fire a trace source

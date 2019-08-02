@@ -28,6 +28,7 @@
 
 #include <ns3/ptr.h>
 #include <ns3/simulator.h>
+#include <ns3/vector.h>
 
 namespace ns3 {
 
@@ -677,6 +678,7 @@ public:
     std::list<MeasResultEutra> measResultListEutra; ///< measure result list eutra
     bool haveScellsMeas; ///< has SCells measure
     MeasResultServFreqList measScellResultList; ///< measure SCell result list
+    Vector uePosition;
   };
 
   // Messages
