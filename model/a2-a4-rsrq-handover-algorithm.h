@@ -109,7 +109,6 @@ protected:
   // inherited from LteHandoverAlgorithm as a Handover Management SAP implementation
   void DoReportUeMeas (uint16_t rnti, LteRrcSap::MeasResults measResults);
 
-
 private:
   /**
    * Called when Event A2 is detected, then trigger a handover if needed.
