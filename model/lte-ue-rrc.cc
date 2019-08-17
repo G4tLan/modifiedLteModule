@@ -2762,6 +2762,7 @@ LteUeRrc::SendMeasurementReport (uint8_t measId)
   LteRrcSap::MeasResults& measResults = measurementReport.measResults;
   measResults.measId = measId;
   measResults.uePosition = ueNode->GetObject<MobilityModel>()->GetPosition() ;
+  measResults.imsi = GetImsi();
 
   std::map<uint16_t, MeasValues>::iterator servingMeasIt = m_storedMeasValues.find (m_cellId);
   NS_ASSERT (servingMeasIt != m_storedMeasValues.end ());
