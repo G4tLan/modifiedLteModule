@@ -144,7 +144,6 @@ A2A4RsrqHandoverAlgorithm::DoReportUeMeas (uint16_t rnti,
                                            LteRrcSap::MeasResults measResults)
 {
   NS_LOG_FUNCTION (this << rnti << (uint16_t) measResults.measId);
-  std::cout << " rsrq " << (uint16_t)measResults.rsrqResult << std::endl;
   if (measResults.measId == m_a2MeasId)
     {
       NS_ASSERT_MSG (measResults.rsrqResult <= m_servingCellThreshold,
@@ -220,7 +219,6 @@ A2A4RsrqHandoverAlgorithm::EvaluateHandover (uint16_t rnti,
               NS_LOG_LOGIC ("serving cell RSRQ " << (uint16_t) servingCellRsrq);
 
               // Inform eNodeB RRC about handover
-              std::cout << " handover " << (uint16_t)rnti << " to " << (uint16_t)bestNeighbourCellId << std::endl;
               m_handoverManagementSapUser->TriggerHandover (rnti,
                                                             bestNeighbourCellId);
             }
