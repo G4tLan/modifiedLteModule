@@ -28,7 +28,7 @@ NS_LOG_COMPONENT_DEFINE ("LteHandoverAlgorithm");
 
 NS_OBJECT_ENSURE_REGISTERED (LteHandoverAlgorithm);
 
-std::map<uint64_t, bool> LteHandoverAlgorithm::ongoingHandovers = {};
+std::map<uint64_t, LteHandoverAlgorithm::cellUePair> LteHandoverAlgorithm::ongoingHandovers = {};
 
 LteHandoverAlgorithm::LteHandoverAlgorithm ()
 {
