@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,12 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model: msg3 collisions)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (integrated the RACH realistic model (taken from Lena-plus(work of Michele Polese)))
  */
 
 
@@ -33,7 +41,8 @@ NS_LOG_COMPONENT_DEFINE ("LteInterference");
 LteInterference::LteInterference ()
   : m_receiving (false),
     m_lastSignalId (0),
-    m_lastSignalIdBeforeReset (0)
+    m_lastSignalIdBeforeReset (0),
+    m_msg3Collisions (0)
 {
   NS_LOG_FUNCTION (this);
 }
@@ -53,6 +62,7 @@ LteInterference::DoDispose ()
   m_rxSignal = 0;
   m_allSignals = 0;
   m_noise = 0;
+  m_msg3Collisions = 0;
   Object::DoDispose ();
 } 
 
@@ -65,6 +75,31 @@ LteInterference::GetTypeId (void)
     .SetGroupName("Lte")
   ;
   return tid;
+}
+
+void
+LteInterference::StartRxMsg3 (Ptr<const SpectrumValue> rxPsd)
+{
+  NS_LOG_FUNCTION (this << *rxPsd);
+  if (m_receiving == false)
+    { 
+      m_msg3Collisions = 0;
+      StartRx(rxPsd);
+    }
+  else // at this point handle a possible collision of msg3 messages
+    {
+      if (Sum ((*rxPsd) * (*m_rxSignal)) != 0.0) // collision
+        {
+    	  NS_LOG_LOGIC ("additional signal" << *m_rxSignal);
+    	  NS_LOG_LOGIC ("multiply signals" <<(*rxPsd) * (*m_rxSignal));
+    	  NS_LOG_LOGIC ("sum of products" << Sum ((*rxPsd) * (*m_rxSignal)));
+          m_msg3Collisions += 1;
+        }
+      else
+        {
+          StartRx(rxPsd);
+        }
+    }
 }
 
 
@@ -103,31 +138,45 @@ LteInterference::StartRx (Ptr<const SpectrumValue> rxPsd)
 }
 
 
-void
-LteInterference::EndRx ()
+bool
+LteInterference::EndRx ()//extended for msg3 collision support
 {
   NS_LOG_FUNCTION (this);
-  if (m_receiving != true)
+  if (m_msg3Collisions > 0)
     {
-      NS_LOG_INFO ("EndRx was already evaluated or RX was aborted");
+      m_receiving = false;
+      m_msg3Collisions = 0;
+      // When receiving on data channel EndRx() is called one time
+      // for all the transmissions. Therefore if there is a MSG3 collision
+      // every MSG3 on that subframe will collide
+      return false;
     }
   else
     {
-      ConditionallyEvaluateChunk ();
-      m_receiving = false;
-      for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_rsPowerChunkProcessorList.begin (); it != m_rsPowerChunkProcessorList.end (); ++it)
+
+      if (m_receiving != true)
         {
-          (*it)->End ();
+          NS_LOG_INFO ("EndRx was already evaluated or RX was aborted");
         }
-      for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_interfChunkProcessorList.begin (); it != m_interfChunkProcessorList.end (); ++it)
+      else
         {
-          (*it)->End ();
+          ConditionallyEvaluateChunk ();
+          m_receiving = false;
+          for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_rsPowerChunkProcessorList.begin (); it != m_rsPowerChunkProcessorList.end (); ++it)
+            {
+              (*it)->End ();
+            }
+          for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_interfChunkProcessorList.begin (); it != m_interfChunkProcessorList.end (); ++it)
+            {
+              (*it)->End ();
+            }
+          for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_sinrChunkProcessorList.begin (); it != m_sinrChunkProcessorList.end (); ++it)
+            {
+              (*it)->End (); 
+            }
         }
-      for (std::list<Ptr<LteChunkProcessor> >::const_iterator it = m_sinrChunkProcessorList.begin (); it != m_sinrChunkProcessorList.end (); ++it)
-        {
-          (*it)->End (); 
-        }
-    }
+      return true;
+    } 
 }
 
 

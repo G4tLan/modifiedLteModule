@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011, 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>,
  *         Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging, Radio Link Failure, uplink synchronization)
  */
 
 #ifndef LTE_UE_CPHY_SAP_H
@@ -36,7 +40,7 @@ class LteEnbNetDevice;
  * Service Access Point (SAP) offered by the UE PHY to the UE RRC for control purposes
  *
  * This is the PHY SAP Provider, i.e., the part of the SAP that contains
- * the PHY methods called by the MAC
+ * the PHY methods called by the RRC
  */
 class LteUeCphySapProvider
 {
@@ -144,6 +148,48 @@ public:
    */
   virtual void SetPa (double pa) = 0;
 
+  /**
+   * Reset the UE PHY due to the timeAlignmentTimer expiry.
+   * The HARQ buffers are flushed, SRS/PUCCH resources are released
+   * and configured uplink grants and downlink assignments are cleared.
+   * The UE is considered to be uplink out-of-sync
+   * 
+   */
+  virtual void ResetToOutOfSync () = 0;
+
+  /**
+   * Reset the UE to the idle camped state by clearing the
+   * appropriate parameters at the PHY
+   * 
+   */
+  virtual void ResetToCamped () = 0;
+
+  /**
+   * Configure the parameters for Radio Link Failure detection
+   * when RAR is received by UE. RAR reception indicates that the UE
+   * is both uplink and downlink synchronized and radio link failure
+   * detection procedure can be started.
+   * 
+   */
+  virtual void ConfigureRadioLinkFailureDetection()=0;
+
+  /**
+   * When T310 timer is started, it indicates that physical layer
+   * problems are detected at the UE and the recovery process is
+   * started by checking if the radio frames are in-sync for N311
+   * consecutive times.
+   * 
+   */
+  virtual void StartInSnycDetection()=0;
+
+  /**
+   * Calculate the paging cycle and paging occasion for the UE
+   * according to the paging configuration received in SIB2.
+   * See 3GPP 36.304 section 7
+   * 
+   */
+  virtual void ConfigurePaging(LteRrcSap::PcchConfig pagingConfig)=0;
+
 };
 
 
@@ -211,6 +257,39 @@ public:
    */
   virtual void ReportUeMeasurements (UeMeasurementsParameters params) = 0;
 
+  /**
+   * Send an out of sync indication to UE RRC.
+   * When the count equals N310, then T310 is started.
+   * 
+   */
+  virtual void NotifyOutOfSync()=0;
+
+  /**
+   * Send an in sync indication to UE RRC.
+   * When the count equals N311, then T310 is cancelled.
+   * 
+   */
+  virtual void NotifyInSync()=0;
+
+  /**
+   * Reset the number of out-of-sync or in-sync indications 
+   * sent to the RRC to zero when the out-of-sync or in-sync condition 
+   * is not fulfilled during its evaluation respectively. 
+   */
+  virtual void ResetNumOfSyncIndications()=0;
+ 
+  /**
+   * When the UE receives the paging message, the UE identity in the
+   * message is matched with the identity of the this UE (here IMSI is used).
+   * If it matches, then the paging message is accepted. The RRC connection is established
+   * only if the UE is in the camped state. If not, after the MME paging timer expires,
+   * the eNodeB tries to page the UE again.
+   * 
+   *
+   * \param msg RRC paging message
+   */
+  virtual void ReceivePagingMsg(LteRrcSap::RrcPagingMessage msg)=0;
+
 };
 
 
@@ -244,6 +323,11 @@ public:
   virtual void SetTransmissionMode (uint8_t txMode);
   virtual void SetSrsConfigurationIndex (uint16_t srcCi);
   virtual void SetPa (double pa);
+  virtual void ResetToOutOfSync ();
+  virtual void ResetToCamped ();
+  virtual void ConfigureRadioLinkFailureDetection();
+  virtual void StartInSnycDetection();
+  virtual void ConfigurePaging(LteRrcSap::PcchConfig pagingConfig);
 
 private:
   MemberLteUeCphySapProvider ();
@@ -338,6 +422,37 @@ MemberLteUeCphySapProvider<C>::SetPa (double pa)
   m_owner->DoSetPa (pa);
 }
 
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::ResetToOutOfSync ()
+{
+  m_owner->DoResetToOutOfSync ();
+}
+
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::ResetToCamped ()
+{
+  m_owner->DoResetToCamped ();
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::ConfigureRadioLinkFailureDetection()
+{
+	m_owner->DoConfigureRadioLinkFailureDetection();
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::StartInSnycDetection()
+{
+	m_owner->DoStartInSnycDetection();
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::ConfigurePaging(LteRrcSap::PcchConfig pagingConfig)
+{
+  m_owner->DoConfigurePaging(pagingConfig);
+}
 
 /**
  * Template for the implementation of the LteUeCphySapUser as a member
@@ -361,6 +476,11 @@ public:
   virtual void RecvSystemInformationBlockType1 (uint16_t cellId,
                                                 LteRrcSap::SystemInformationBlockType1 sib1);
   virtual void ReportUeMeasurements (LteUeCphySapUser::UeMeasurementsParameters params);
+  virtual void NotifyOutOfSync();
+  virtual void NotifyInSync();
+  virtual void ReceivePagingMsg(LteRrcSap::RrcPagingMessage msg);
+  virtual void ResetNumOfSyncIndications();
+
 
 private:
   MemberLteUeCphySapUser ();
@@ -401,6 +521,33 @@ MemberLteUeCphySapUser<C>::ReportUeMeasurements (LteUeCphySapUser::UeMeasurement
   m_owner->DoReportUeMeasurements (params);
 }
 
+template <class C>
+void
+MemberLteUeCphySapUser<C>::NotifyOutOfSync()
+{
+	m_owner->DoNotifyOutOfSync();
+}
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::NotifyInSync()
+{
+	m_owner->DoNotifyInSync();
+}
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ReceivePagingMsg(LteRrcSap::RrcPagingMessage msg)
+{
+  m_owner->DoRecvPagingMsg(msg);
+}
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ResetNumOfSyncIndications()
+{
+  m_owner->DoResetNumOfSyncIndications();
+}
 
 } // namespace ns3
 

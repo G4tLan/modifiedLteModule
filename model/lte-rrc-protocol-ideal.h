@@ -138,7 +138,27 @@ private:
   LteUeRrcSapProvider* m_ueRrcSapProvider; ///< the UE RRC SAP provider
   LteUeRrcSapUser* m_ueRrcSapUser; ///< the RRC SAP user
   LteEnbRrcSapProvider* m_enbRrcSapProvider; ///< the ENB RRC SAP provider
-  
+
+  /**
+   * Notify eNodeB to start the parallel time alignment timer when UE receives RAR
+   * (currently only implemented ideally to maintain synchronization
+   * between the 2 time alignment timers)
+   * 
+   *
+   * \param timeAlignmentTimer the duration of the timer
+   * \param rnti the the RNTI of the UE whose timer has to be started/restarted
+   */
+  void DoNotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti);
+
+  /**
+   * Notify eNodeB to release UE context once radio link failure
+   * or random access failure is detected
+   * (Needed since no RLF detection mechanism at eNodeB is implemented)
+   * 
+   *
+   * \param rnti the RNTI of the UE
+   */
+  void DoNotifyEnbToReleaseUeContext (uint16_t rnti);
 };
 
 
@@ -200,6 +220,20 @@ public:
    * \param p the UE RRC SAP provider 
    */
   void SetUeRrcSapProvider (uint16_t rnti, LteUeRrcSapProvider* p);
+
+  /**
+   * Store the UeRrcSapProvider in a map with IMSI as the key.
+   * Map is used before sending RRC connection setup to reset the
+   * UeRrcSapProvider for a RNTI in the m_enbRrcSapProviderMap.
+   * Since multiple UEs might have sent RRC connection request with same RNTI
+   * and UE from which request is received might not match with UE
+   * whose RrcSapProvider is stored in m_enbRrcSapProviderMap.
+   * 
+   *
+   * \param imsi the IMSI
+   * \param p LteUeRrcSapProvider *
+   */
+  void SetUeRrcSapProviderMap (uint64_t imsi, LteUeRrcSapProvider* p);
 
 private:
 
@@ -301,13 +335,40 @@ private:
    */
   LteRrcSap::RrcConnectionReconfiguration DoDecodeHandoverCommand (Ptr<Packet> p);
 
+  /**
+   * Reset the UeRrcSapProvider in the m_enbRrcSapProviderMap to point
+   * to the UE from which RRC connection request was received
+   * (Scenario: RRC connection request from UE 1 is lost and
+   * from UE 2 is received--no collision)
+   * 
+   *
+   * \param imsi the IMSI of the UE
+   * \param rnti the RNTI of the UE
+   */
+  void DoResetUeRrcSapProvider (uint64_t imsi, uint16_t rnti);
+
+    /**
+   * Notify the UE to reset to the camped state when the 
+   * inactivity timer of the UE expires at the eNodeB.
+   * 
+   * \param rnti the RNTI of the UE
+   */
+  void DoNotifyUeInactivityTimerExpiry(uint16_t rnti);
 
   uint16_t m_rnti; ///< the RNTI
   uint16_t m_cellId; ///< the cell ID
   LteEnbRrcSapProvider* m_enbRrcSapProvider; ///< the ENB RRC SAP provider
   LteEnbRrcSapUser* m_enbRrcSapUser; ///< the ENB RRC SAP user
   std::map<uint16_t, LteUeRrcSapProvider*> m_enbRrcSapProviderMap; ///< the LTE UE RRC SAP provider
-  
+
+  /**
+   * Map containing the RRC SAP provider of each UE connected to the eNodeB
+   * with the IMSI as the key.
+   * 
+   */
+  std::map<uint64_t, LteUeRrcSapProvider*> m_ueRrcSapProviderMap;
+
+
 };
 
 

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2014 Piotr Gawlowicz
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Piotr Gawlowicz <gawlowicz.p@gmail.com>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  *
  */
 
@@ -140,6 +144,7 @@ public:
 
   /// Calculate PUSCH transmit power function
   void CalculatePuschTxPower ();
+  void CalculatePrachTxPower ();
   /// Calculate PUCCH transmit power function
   void CalculatePucchTxPower ();
   /// Calculate SRS transmit power function
@@ -152,6 +157,12 @@ public:
    * \returns the PUSCH transmit power
    */
   double GetPuschTxPower (std::vector <int> rb);
+
+  /**
+   * See 3GPP TS 36.213 6.1, 36.321 5.1.3
+   * 
+   */
+  double GetPrachTxPower (std::vector <int> rb, int32_t preambleReceivedTargetPower);
   /**
    * \brief Get PUCCH transmit power function
    *
@@ -159,6 +170,7 @@ public:
    * \returns the PUCCH transmit power
    */
   double GetPucchTxPower (std::vector <int> rb);
+
   /**
    * \brief Get SRS transmit power function
    *
@@ -190,6 +202,7 @@ private:
   double m_Pcmin; ///< PC minimum
 
   double m_curPuschTxPower; ///< current PUSCH transmit power
+  double m_curPrachTxPower;
   double m_curPucchTxPower; ///< current PUCCH transmit power
   double m_curSrsTxPower; ///< current SRS transmit power
 
@@ -203,6 +216,8 @@ private:
   int16_t m_PsrsOffset; ///< PSRS offset
 
   uint16_t m_M_Pusch; ///< size of DL RB list
+  uint16_t m_M_Prach;
+  int32_t m_preambleReceivedTargetPower;
   std::vector<double> m_alpha; ///< alpha values
   double m_pathLoss; ///< path loss value
   double m_deltaTF; ///< delta TF
@@ -222,6 +237,8 @@ private:
    * uint16_t cellId, uint16_t rnti, double txPower
    */
   TracedCallback<uint16_t, uint16_t, double> m_reportPuschTxPower;
+
+  TracedCallback<uint16_t, uint16_t, double> m_reportPrachTxPower;
   /**
    * Trace information regarding Uplink TxPower
    * uint16_t cellId, uint16_t rnti, double txPower

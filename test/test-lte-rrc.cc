@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,11 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  *         Budiarto Herman <budiarto.herman@magister.fi>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 
@@ -278,6 +284,15 @@ LteRrcConnectionEstablishmentTestCase::DoRun ()
       Config::SetDefault ("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue (320));
     }
 
+  /**
+   * Increase the maximum number of random access preamble transmissions
+   * for testing with more than 40 UEs (since the eNodeB can send RAR only to 4 UEs
+   * at a time so maximum num of Ues connected after 10 preamble transmissions is 40).
+   * The increase is also required since the UEs do not attempt the RA again in
+   * this test case scenario (as no EPC is enabled).
+   */
+  Config::SetDefault ("ns3::LteEnbMac::PreambleTransMax", UintegerValue (50));//default: 10
+
   // normal code
   m_lteHelper = CreateObject<LteHelper> ();
   m_lteHelper->SetAttribute ("UseIdealRrc", BooleanValue (m_useIdealRrc));
@@ -368,6 +383,13 @@ LteRrcConnectionEstablishmentTestCase::Connect (Ptr<NetDevice> ueDevice, Ptr<Net
 {
   NS_LOG_FUNCTION (this);
   m_lteHelper->Attach (ueDevice, enbDevice);
+
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  ueDevice->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
 
   for (uint32_t b = 0; b < m_nBearers; ++b)
     {
@@ -606,6 +628,15 @@ LteRrcConnectionEstablishmentErrorTestCase::DoRun ()
     {
       Config::SetDefault ("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue (320));
     }
+
+  /**
+   * Increase the maximum number of random access preamble transmissions
+   * for testing with more than 40 UEs (since the eNodeB can send RAR only to 4 UEs
+   * at a time so maximum num of Ues connected after 10 preamble transmissions is 40).
+   * The increase is also required since the UEs do not attempt the RA again in
+   * this test case scenario (as no EPC is enabled).
+   */
+  Config::SetDefault ("ns3::LteEnbMac::PreambleTransMax", UintegerValue (50));//default: 10
 
   // normal code
   m_lteHelper = CreateObject<LteHelper> ();

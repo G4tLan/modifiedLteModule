@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model) 
  */
 #ifndef LTE_COMMON_H
 #define LTE_COMMON_H
@@ -207,6 +211,28 @@ struct PhyTransmissionStatParameters
   
 };
 
+struct PhyPrachTransmissionStatParameters
+{
+  int64_t  m_timestamp; // in millisecond
+  uint16_t m_cellId;  ///< Cell ID of the attached Enb
+  uint64_t m_imsi;    ///< IMSI of the scheduled UE
+  uint16_t m_rnti;    ///< C-RNTI scheduled
+  uint8_t  m_txMode;  ///< the transmission Mode
+  uint8_t  m_layer;   ///< the layer (cw) of the transmission
+  uint8_t  m_mcs;     ///< MCS for transport block
+  uint16_t m_size;    ///< Size of transport block
+  uint8_t  m_rv;      ///< the redundancy version (HARQ)
+  uint8_t  m_ndi;     ///< new data indicator flag
+  uint32_t m_numAccess; ///< the index of access attempt
+  
+  /**
+   *  TracedCallback signature.
+   *
+   * \param [in] params Value of the PhyTransmissionionStatParameters.
+   */
+  typedef void (* TracedCallback)(const PhyPrachTransmissionStatParameters params);
+  
+};
 
 /// PhyReceptionStatParameters structure
 struct PhyReceptionStatParameters

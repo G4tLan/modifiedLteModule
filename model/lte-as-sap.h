@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,15 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *        (support for Paging;
+ *    integrated the RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 
@@ -91,6 +102,27 @@ public:
    */
   virtual void Disconnect () = 0;
 
+  /**
+   * Set the flag when uplink data arrives and the UE is in
+   * camped state. Here, the uplink data is buffered. The buffered
+   * data packets are sent towards the eNodeB after the
+   * RRC connection is established.
+   * 
+   *
+   * \param val the flag is set to true if uplink data arrives in camped state
+   */
+  virtual void SetUlDataPendingFlag(bool val)=0;
+
+  /**
+   * If the UE is in the camped state, then a true value is returned.
+   * This indicated to the NAS layer that the UE triggered service request
+   * can be started upon uplink data arrival i.e the RRC connection establishment
+   * is started from the UE side without the need for a paging message.
+   *
+   * \return true if the RRC connection can be established
+   */
+  virtual bool IsUeCamped()=0;
+
 };
 
 
@@ -133,6 +165,19 @@ public:
    */
   virtual void RecvData (Ptr<Packet> packet) = 0;
 
+  /** 
+   * trigger NAS to disconnect, called upon receival of rrconnectionrelease
+   * 
+   * 
+   */
+  virtual void Disconnect() = 0;
+
+  /**
+   * Send the buffered UL packets
+   * 
+   */
+  virtual void SendBufferedUlPackets()=0;
+
 };
 
 
@@ -161,6 +206,8 @@ public:
   virtual void Connect (void);
   virtual void SendData (Ptr<Packet> packet, uint8_t bid);
   virtual void Disconnect ();
+  virtual void SetUlDataPendingFlag(bool val);
+  virtual bool IsUeCamped();
 
 private:
   MemberLteAsSapProvider ();
@@ -220,6 +267,17 @@ MemberLteAsSapProvider<C>::Disconnect ()
   m_owner->DoDisconnect ();
 }
 
+template <class C>
+void MemberLteAsSapProvider<C>::SetUlDataPendingFlag(bool val)
+{
+	m_owner->DoSetUlDataPendingFlag(val);
+}
+
+template <class C>
+bool MemberLteAsSapProvider<C>::IsUeCamped()
+{
+	return m_owner->IsUeCamped();
+}
 
 /**
  * Template for the implementation of the LteAsSapUser as a member
@@ -242,6 +300,8 @@ public:
   virtual void NotifyConnectionFailed ();
   virtual void RecvData (Ptr<Packet> packet);
   virtual void NotifyConnectionReleased ();
+  virtual void Disconnect();
+  virtual void SendBufferedUlPackets();
 
 private:
   MemberLteAsSapUser ();
@@ -282,11 +342,23 @@ MemberLteAsSapUser<C>::RecvData (Ptr<Packet> packet)
 
 template <class C>
 void 
+MemberLteAsSapUser<C>::Disconnect ()
+{
+  m_owner->DoDisconnect ();
+}
+
+template <class C>
+void 
 MemberLteAsSapUser<C>::NotifyConnectionReleased ()
 {
   m_owner->DoNotifyConnectionReleased ();
 }
 
+template <class C>
+void MemberLteAsSapUser<C>::SendBufferedUlPackets()
+{
+	m_owner->DoSendBufferedUlPackets();
+}
 
 } // namespace ns3
 

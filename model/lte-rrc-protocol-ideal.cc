@@ -208,8 +208,27 @@ LteUeRrcProtocolIdeal::SetEnbRrcSapProvider ()
   m_enbRrcSapProvider = enbDev->GetRrc ()->GetLteEnbRrcSapProvider ();  
   Ptr<LteEnbRrcProtocolIdeal> enbRrcProtocolIdeal = enbDev->GetRrc ()->GetObject<LteEnbRrcProtocolIdeal> ();
   enbRrcProtocolIdeal->SetUeRrcSapProvider (m_rnti, m_ueRrcSapProvider);
+  //needed to reset eNbRrcSapProviderMap before sending RRC connection setup
+  enbRrcProtocolIdeal->SetUeRrcSapProviderMap(m_rrc->GetImsi(), m_ueRrcSapProvider);
 }
 
+
+void
+LteUeRrcProtocolIdeal::DoNotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti)
+{
+  //ideally informing eNB
+  Simulator::Schedule (RRC_IDEAL_MSG_DELAY, &LteEnbRrcSapProvider::StartTimeAlignmentTimer,
+                       m_enbRrcSapProvider, timeAlignmentTimer, rnti);
+}
+
+void
+LteUeRrcProtocolIdeal::DoNotifyEnbToReleaseUeContext (uint16_t rnti)
+{
+  SetEnbRrcSapProvider (); //the provider has to be reset since the cell might have changed due to handover
+  //ideally informing eNB
+  Simulator::Schedule (RRC_IDEAL_MSG_DELAY, &LteEnbRrcSapProvider::RecvNotificationToReleaseUeContext,
+                       m_enbRrcSapProvider, rnti);
+}
 
 NS_OBJECT_ENSURE_REGISTERED (LteEnbRrcProtocolIdeal);
 
@@ -411,6 +430,30 @@ LteEnbRrcProtocolIdeal::DoSendRrcConnectionReject (uint16_t rnti, LteRrcSap::Rrc
 		       &LteUeRrcSapProvider::RecvRrcConnectionReject,
 		       GetUeRrcSapProvider (rnti), 
 		       msg);
+}
+
+void
+LteEnbRrcProtocolIdeal::SetUeRrcSapProviderMap (uint64_t imsi, LteUeRrcSapProvider* p)
+{
+  NS_LOG_FUNCTION(this<<imsi);
+  m_ueRrcSapProviderMap[imsi] = p;
+}
+
+void
+LteEnbRrcProtocolIdeal::DoResetUeRrcSapProvider (uint64_t imsi, uint16_t rnti)
+{
+  NS_LOG_FUNCTION(this<<rnti);
+  std::map<uint64_t, LteUeRrcSapProvider*>::const_iterator it = m_ueRrcSapProviderMap.find (imsi);
+  NS_ASSERT_MSG(it != m_ueRrcSapProviderMap.end (), "could not find IMSI = " << imsi);
+  SetUeRrcSapProvider (rnti, it->second);
+}
+
+void 
+LteEnbRrcProtocolIdeal::DoNotifyUeInactivityTimerExpiry(uint16_t rnti)
+{
+  NS_LOG_FUNCTION(this<<rnti);
+  Simulator::Schedule (RRC_IDEAL_MSG_DELAY, &LteUeRrcSapProvider::RecvNotificationOfUeInactivityTimerExpiry,
+              GetUeRrcSapProvider (rnti));
 }
 
 /*

@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  * Modified by Marco Miozzo <mmiozzo@cttc.es> (add data and ctrl diversity)
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #include <ns3/log.h>
@@ -73,6 +77,7 @@ LteSpectrumSignalParametersDataFrame::LteSpectrumSignalParametersDataFrame (cons
       packetBurst = p.packetBurst->Copy ();
     }
   ctrlMsgList = p.ctrlMsgList;
+  isMsg3 = p.isMsg3;
 }
 
 Ptr<SpectrumSignalParameters>
@@ -118,6 +123,36 @@ LteSpectrumSignalParametersDlCtrlFrame::Copy ()
   Ptr<LteSpectrumSignalParametersDlCtrlFrame> lssp (new LteSpectrumSignalParametersDlCtrlFrame (*this), false);  
   return lssp;
 }
+
+
+LteSpectrumSignalParametersPrachFrame::LteSpectrumSignalParametersPrachFrame ()
+{
+  NS_LOG_FUNCTION (this);
+}
+
+
+LteSpectrumSignalParametersPrachFrame::LteSpectrumSignalParametersPrachFrame (const LteSpectrumSignalParametersPrachFrame& p)
+: SpectrumSignalParameters (p)
+{
+  NS_LOG_FUNCTION (this << &p);
+  cellId = p.cellId;
+  prachMsgList = p.prachMsgList;
+}
+
+Ptr<SpectrumSignalParameters>
+LteSpectrumSignalParametersPrachFrame::Copy ()
+{
+  NS_LOG_FUNCTION (this);
+  // Ideally we would use:
+  //   return Copy<LteSpectrumSignalParametersPrachFrame> (*this);
+  // but for some reason it doesn't work. Another alternative is 
+  //   return Copy<LteSpectrumSignalParametersPrachFrame> (this);
+  // but it causes a double creation of the object, hence it is less efficient.
+  // The solution below is copied from the implementation of Copy<> (Ptr<>) in ptr.h
+  Ptr<LteSpectrumSignalParametersPrachFrame> lssp (new LteSpectrumSignalParametersPrachFrame (*this), false);  
+  return lssp;
+}
+
 
 
 LteSpectrumSignalParametersUlSrsFrame::LteSpectrumSignalParametersUlSrsFrame ()

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,11 @@
  *
  * Authors: Nicola Baldo <nbaldo@cttc.es>
  *          Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include <ns3/core-module.h>
@@ -379,10 +385,25 @@ LteX2HandoverMeasuresTestCase::DoRun ()
   // all UEs attached to eNB 0 at the beginning
   m_lteHelper->Attach (ueDevices, enbDevices.Get (0));
 
+  if (!m_epc || m_nDedicatedBearers==0)
+      {
+      /**
+       * Since LTE-only simulation (without EPC) or EPC simulation with
+       * no dedicated bearers activated, is performed,
+       * manually set the m_connectionPending flag for each UE so that
+       * they can transition to RRC CONNECTED state
+       */
+      for (uint32_t i = 0; i < m_nUes; i++)
+        {
+          Ptr<NetDevice> ueDev = ueDevices.Get (i);
+          ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+        }
+      }
+
   if (m_epc)
     {
-      bool epcDl = true;
-      bool epcUl = false;
+      bool epcDl = false;
+      bool epcUl = true;
       // the rest of this block is copied from lena-dual-stripe
 
 
@@ -520,7 +541,7 @@ LteX2HandoverMeasuresTestCase::DoRun ()
   m_lteHelper->AddX2Interface (enbNodes);
 
   // check initial RRC connection
-  const Time maxRrcConnectionEstablishmentDuration = Seconds (0.080);
+  const Time maxRrcConnectionEstablishmentDuration = Seconds (0.3);
   for (NetDeviceContainer::Iterator it = ueDevices.Begin (); it != ueDevices.End (); ++it)
     {
       NS_LOG_FUNCTION (maxRrcConnectionEstablishmentDuration);

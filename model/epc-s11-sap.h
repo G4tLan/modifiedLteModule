@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_S11_SAP_H
@@ -155,6 +158,22 @@ public:
    */
   virtual void ModifyBearerResponse (ModifyBearerResponseMessage msg) = 0;
 
+  /**
+   * Downlink Data Notification message, see 3GPP TS 29.274 7.2.11
+   * 
+   */
+  struct DownlinkDataNotificationMessage
+  {
+    uint64_t imsi; //Here, IMSI is used instead of Eps bearer ID
+  };
+
+  /**
+   * Send a Downlink Data Notification message to MME to start the paging procedure
+   * 
+   *
+   * \param msg Downlink Data Notification message
+   */
+  virtual void DownlinkDataNotification(DownlinkDataNotificationMessage msg)=0;
 };
 
 /**
@@ -249,6 +268,21 @@ public:
    */
   virtual void ModifyBearerRequest (ModifyBearerRequestMessage msg) = 0;
 
+  /**
+   * Send the buffered downlink packets to UE once RRC connection is established
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  virtual void SendBufferedDlPackets(uint64_t imsi)=0;
+
+  /**
+   * Discard the buffered downlink packets for an UE upon paging failure
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  virtual void DiscardBufferedDlPackets(uint64_t imsi)=0;
 };
 
 
@@ -277,6 +311,14 @@ public:
   virtual void CreateSessionResponse (CreateSessionResponseMessage msg);
   virtual void ModifyBearerResponse (ModifyBearerResponseMessage msg);
   virtual void DeleteBearerRequest (DeleteBearerRequestMessage msg);
+
+  /**
+   * Send a Downlink Data Notification message to MME to start the paging procedure
+   * 
+   *
+   * \param msg Downlink Data Notification message
+   */
+  virtual void DownlinkDataNotification(DownlinkDataNotificationMessage msg);
 
 private:
   MemberEpcS11SapMme ();
@@ -317,7 +359,11 @@ void MemberEpcS11SapMme<C>::ModifyBearerResponse (ModifyBearerResponseMessage ms
   m_owner->DoModifyBearerResponse (msg);
 }
 
-
+template <class C>
+void MemberEpcS11SapMme<C>::DownlinkDataNotification(DownlinkDataNotificationMessage msg)
+{
+  m_owner->DoDownlinkDataNotification (msg);
+}
 
 
 
@@ -342,6 +388,20 @@ public:
   virtual void ModifyBearerRequest (ModifyBearerRequestMessage msg);
   virtual void DeleteBearerCommand (DeleteBearerCommandMessage msg);
   virtual void DeleteBearerResponse (DeleteBearerResponseMessage msg);
+  /**
+   * Send the buffered downlink packets to UE once RRC connection is established
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  virtual void SendBufferedDlPackets(uint64_t imsi);
+  /**
+   * Discard the buffered downlink packets for an UE upon paging failure
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  virtual void DiscardBufferedDlPackets(uint64_t imsi);
 
 private:
   MemberEpcS11SapSgw ();
@@ -388,9 +448,17 @@ void MemberEpcS11SapSgw<C>::DeleteBearerResponse (DeleteBearerResponseMessage ms
   m_owner->DoDeleteBearerResponse (msg);
 }
 
+template <class C>
+void MemberEpcS11SapSgw<C>::SendBufferedDlPackets(uint64_t imsi)
+{
+  m_owner->DoSendBufferedDlPackets(imsi);
+}
 
-
-
+template <class C>
+void MemberEpcS11SapSgw<C>::DiscardBufferedDlPackets(uint64_t imsi)
+{
+  m_owner->DoDiscardBufferedDlPackets(imsi);
+}
 } //namespace ns3
 
 #endif /* EPC_S11_SAP_H */

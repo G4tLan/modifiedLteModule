@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 Magister Solutions
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,11 @@
  *
  * Author: Budiarto Herman <budiarto.herman@magister.fi>
  *         Alexander Krotov <krotov@iitp.ru>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include <ns3/test.h>
@@ -43,7 +49,8 @@
 #include <ns3/data-rate.h>
 #include <ns3/ipv4-static-routing.h>
 #include <ns3/position-allocator.h>
-
+#include <ns3/lte-ue-net-device.h>
+#include <ns3/lte-ue-rrc.h>
 
 using namespace ns3;
 
@@ -210,6 +217,14 @@ LteHandoverDelayTestCase::DoRun ()
   // Prepare handover.
   lteHelper->AddX2Interface (enbNodes);
   lteHelper->Attach (ueDev, enbDevs.Get(0));
+  /**
+   * Since the connection procedure is not automatically triggered
+   * as there are no applications installed on the UE,
+   * manually set the m_connectionPending flag for the UE so that
+   * it can transition to RRC CONNECTED state
+   */
+  ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+
   lteHelper->HandoverRequest (m_handoverTime, ueDev, enbDevs.Get (0), enbDevs.Get (1));
 
   // Run simulation.

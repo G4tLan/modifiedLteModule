@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  * Modified by Marco Miozzo <mmiozzo@cttc.es> (add data and ctrl diversity)
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #ifndef LTE_SPECTRUM_SIGNAL_PARAMETERS_H
@@ -91,7 +95,36 @@ struct LteSpectrumSignalParametersDataFrame : public SpectrumSignalParameters
   
   std::list<Ptr<LteControlMessage> > ctrlMsgList; ///< the control message list
   
+  bool isMsg3;
+
   uint16_t cellId; ///< cell ID
+};
+
+/**
+* \ingroup lte
+*  
+* Signal parameters for Lte PRACH Frame (RACH preamble)
+*/
+struct LteSpectrumSignalParametersPrachFrame : public SpectrumSignalParameters
+{
+  
+  // inherited from SpectrumSignalParameters
+  virtual Ptr<SpectrumSignalParameters> Copy ();
+  
+  /**
+  * default constructor
+  */
+  LteSpectrumSignalParametersPrachFrame ();
+  
+  /**
+  * copy constructor
+  */
+  LteSpectrumSignalParametersPrachFrame (const LteSpectrumSignalParametersPrachFrame& p);
+
+
+  std::list<Ptr<LteControlMessage> > prachMsgList; // in order to carry the rach preamble
+  
+  uint16_t cellId;
 };
 
 

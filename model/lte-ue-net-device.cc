@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -21,6 +22,9 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #include "ns3/llc-snap-header.h"
@@ -154,6 +158,13 @@ LteUeNetDevice::UpdateConfig (void)
                          << " CSG ID " << m_csgId);
       m_nas->SetImsi (m_imsi);
       m_rrc->SetImsi (m_imsi);
+      // for tracing
+  std::map< uint8_t, Ptr<ComponentCarrierUe> >::iterator it;
+  for (it = m_ccMap.begin (); it != m_ccMap.end (); ++it)
+    {
+      it->second->GetMac ()->SetImsi (m_imsi);
+      it->second->GetPhy ()->SetImsi (m_imsi);
+    }
       m_nas->SetCsgId (m_csgId); // this also handles propagation to RRC
     }
   else

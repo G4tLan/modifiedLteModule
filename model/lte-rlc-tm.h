@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011,2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,12 +18,16 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es> 
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #ifndef LTE_RLC_TM_H
 #define LTE_RLC_TM_H
 
 #include "ns3/lte-rlc.h"
+#include <ns3/random-variable-stream.h>
 
 #include <ns3/event-id.h>
 #include <map>
@@ -67,6 +72,7 @@ public:
    */
   virtual void DoNotifyHarqDeliveryFailure ();
   virtual void DoReceivePdu (Ptr<Packet> p, uint16_t rnti, uint8_t lcid);
+  // virtual void DoSendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId);
 
 private:
   /// Expire RBS timer function
@@ -78,6 +84,8 @@ private:
   uint32_t m_maxTxBufferSize; ///< maximum transmit buffer size
   uint32_t m_txBufferSize; ///< transmit buffer size
   std::vector < Ptr<Packet> > m_txBuffer; ///< Transmission buffer
+  Ptr<UniformRandomVariable> m_randomTmsi;
+  uint32_t m_tmsi;
 
   EventId m_rbsTimer; ///< RBS timer
 

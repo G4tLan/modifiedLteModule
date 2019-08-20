@@ -380,7 +380,7 @@ CqaFfMacScheduler::DoCschedLcReleaseReq (const struct FfMacCschedSapProvider::Cs
         }
       else
         {
-          NS_FATAL_ERROR ("Logical channels cannot be released because it can not be found in the list of active LCs");
+          NS_LOG_ERROR ("Logical channels cannot be released because it can not be found in the list of active LCs");
         }
     }
 	

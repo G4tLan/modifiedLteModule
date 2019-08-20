@@ -1,6 +1,6 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
-* Copyright (c) 2011 SIGNET LAB. Department of Information Engineering (DEI), University of Padua
+* Copyright (c) 2015 SIGNET LAB. Department of Information Engineering (DEI), University of Padua
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 as
@@ -27,6 +27,9 @@
 *
 * Subsequent integration in LENA and extension done by:
 *      Marco Miozzo <marco.miozzo@cttc.es>
+*
+* Modified by Michele Polese <michele.polese@gmail.com>
+*    (support for RACH realistic model)
 */ 
 
 #include <list>
@@ -35,6 +38,7 @@
 #include <ns3/pointer.h>
 #include <stdint.h>
 #include <cmath>
+#include <stdint.h>
 #include "stdlib.h"
 #include <ns3/lte-mi-error-model.h>
 
@@ -330,6 +334,23 @@ static const double cEcrTable [9][38] = {
     
 };
 
+// see 
+// F. Javier López-Martínez, , Eduardo del Castillo-Sánchez , Eduardo Martos-Naya , J. Tomás Entrambasaguas,
+// Performance evaluation of preamble detectors for 3GPP-LTE physical random access channel,
+// Digital Signal Processing, Volume 22, Issue 3, May 2012, Pages 526-534, 
+// ISSN 1051-2004, http://dx.doi.org/10.1016/j.dsp.2012.01.006
+
+static const double prachSnrPmissYaxis[ns3::PRACH_CURVE_SIZE] =
+{
+  // LT curve, AWGN, 2 antennae
+  2.1e-1, 1.5e-1, 9e-2, 5e-2, 2.7e-2, 1.2e-2, 6e-3, 3e-3, 1.7e-3, 7e-4, 3.5e-4, 1.2e-4, 4.6e-5
+};
+
+
+static const double prachSnrPmissXaxis[ns3::PRACH_CURVE_SIZE] =
+{
+  -20,     -19,    -18,  -17,    -16,    -15,  -14,  -13,    -12,  -11,    -10,     -9,     -8
+};
 
 double 
 LteMiErrorModel::Mib (const SpectrumValue& sinr, const std::vector<int>& map, uint8_t mcs)
@@ -458,6 +479,44 @@ LteMiErrorModel::MappingMiBler (double mib, uint8_t ecrId, uint16_t cbSize)
   double bler = 0.5*( 1 - erf((mib-b)/(sqrt(2)*c)) );
   NS_LOG_LOGIC ("MIB: " << mib << " BLER:" << bler << " b:" << b << " c:" << c);
   return bler;
+}
+
+double 
+LteMiErrorModel::GetPrachError (const SpectrumValue& snr)
+{
+  NS_LOG_FUNCTION (snr);
+  SpectrumValue snrCopy = snr;
+  Values::iterator snrIt = snrCopy.ValuesBegin ();
+  NS_ASSERT (snrIt!=snrCopy.ValuesEnd ());
+  double snrSum = 0;
+  uint8_t iterations = 0;
+  while (snrIt!=snrCopy.ValuesEnd ())
+    {
+      double snrLin = *snrIt;
+      snrSum += snrLin;
+      iterations++;
+      snrIt++;
+    }
+  // compute the average snr over the 6 RB of prach
+  double esnr = snrSum/iterations;
+
+  double esrnDb = 10*log10 (esnr); 
+  double errorRate = 0.0;
+  uint8_t i = 0;
+  while ((i<PRACH_CURVE_SIZE)&&(prachSnrPmissXaxis[i] < esrnDb))
+    {
+      i++;
+    }
+  if (esrnDb > prachSnrPmissXaxis[PRACH_CURVE_SIZE-1])
+    {
+      errorRate = 0.0;
+    }
+  else 
+    {
+      NS_ASSERT_MSG (i<PRACH_CURVE_SIZE, "PRACH map out of data");
+      errorRate = prachSnrPmissYaxis[i];
+    }  
+  return errorRate;
 }
 
 

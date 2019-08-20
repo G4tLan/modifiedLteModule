@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2014 Piotr Gawlowicz
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Piotr Gawlowicz <gawlowicz.p@gmail.com>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  *
  */
 
@@ -119,6 +123,10 @@ LteUePowerControl::GetTypeId (void)
     .AddTraceSource ("ReportPuschTxPower",
                      "Report PUSCH TxPower in dBm",
                      MakeTraceSourceAccessor (&LteUePowerControl::m_reportPuschTxPower),
+                     "ns3::LteUePowerControl::TxPowerTracedCallback")
+    .AddTraceSource ("ReportPrachTxPower",
+                     "Report PRACH TxPower in dBm",
+                     MakeTraceSourceAccessor (&LteUePowerControl::m_reportPrachTxPower),
                      "ns3::LteUePowerControl::TxPowerTracedCallback")
     .AddTraceSource ("ReportPucchTxPower",
                      "Report PUCCH TxPower in dBm",
@@ -386,6 +394,25 @@ LteUePowerControl::CalculatePuschTxPower ()
   NS_LOG_INFO ("PuschTxPower: " << m_curPuschTxPower);
 }
 
+
+void
+LteUePowerControl::CalculatePrachTxPower ()
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_LOG_INFO ("RB: " << m_M_Prach
+            << " PathLoss: " << m_pathLoss);
+
+  // 3GPP TS 36.213 6.1
+  m_curPrachTxPower = m_preambleReceivedTargetPower + m_pathLoss;
+
+  NS_LOG_INFO ("CalcPower: " << m_curPrachTxPower << " MinPower: " << m_Pcmin << " MaxPower:" << m_Pcmax);
+
+  m_curPrachTxPower = m_curPrachTxPower > m_Pcmin ? m_curPrachTxPower : m_Pcmin;
+  m_curPrachTxPower = m_Pcmax < m_curPrachTxPower ? m_Pcmax : m_curPrachTxPower;
+  NS_LOG_INFO ("PrachTxPower: " << m_curPrachTxPower);
+}
+
 void
 LteUePowerControl::CalculatePucchTxPower ()
 {
@@ -429,6 +456,20 @@ LteUePowerControl::GetPuschTxPower (std::vector <int> dlRb)
   m_reportPuschTxPower (m_cellId, m_rnti, m_curPuschTxPower);
 
   return m_curPuschTxPower;
+}
+
+double
+LteUePowerControl::GetPrachTxPower (std::vector <int> dlRb, int32_t preambleReceivedTargetPower)
+{
+  NS_LOG_FUNCTION (this);
+
+  m_M_Prach = dlRb.size ();
+  m_preambleReceivedTargetPower = preambleReceivedTargetPower;
+  CalculatePrachTxPower ();
+
+  m_reportPrachTxPower (m_cellId, m_rnti, m_curPrachTxPower);
+
+  return m_curPrachTxPower;
 }
 
 double

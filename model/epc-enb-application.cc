@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,11 @@
  *
  * Author: Jaume Nin <jnin@cttc.cat>
  *         Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 
@@ -29,7 +36,7 @@
 
 #include "epc-gtpu-header.h"
 #include "eps-bearer-tag.h"
-
+#include <ns3/simulator.h>
 
 namespace ns3 {
 
@@ -292,10 +299,12 @@ EpcEnbApplication::RecvFromS1uSocket (Ptr<Socket> socket)
   packet->RemoveHeader (gtpu);
   uint32_t teid = gtpu.GetTeid ();
   std::map<uint32_t, EpsFlowId_t>::iterator it = m_teidRbidMap.find (teid);
+  if(it->second.m_rnti!=0){
   NS_ASSERT (it != m_teidRbidMap.end ());
 
   m_rxS1uSocketPktTrace (packet->Copy ());
   SendToLteSocket (packet, it->second.m_rnti, it->second.m_bid);
+  }
 }
 
 void 
@@ -351,6 +360,23 @@ EpcEnbApplication::DoReleaseIndication (uint64_t imsi, uint16_t rnti, uint8_t be
   erabToBeReleaseIndication.push_back (erab);
   //From 3GPP TS 23401-950 Section 5.4.4.2, enB sends EPS bearer Identity in Bearer Release Indication message to MME
   m_s1apSapMme->ErabReleaseIndication (imsi, rnti, erabToBeReleaseIndication);
+}
+
+void
+EpcEnbApplication::DoRecvS1apPagingMessage (EpcS1apSapEnb::S1apPagingMessage msg)
+{
+  NS_LOG_FUNCTION(this << msg.uePagingId);
+  struct EpcEnbS1SapUser::PagingParameters params;
+  params.uePagingId = msg.uePagingId;
+  params.cnDomain = (EpcEnbS1SapUser::PagingParameters::CnDomain) msg.cnDomain;
+  params.ueIdentityIndexValue=msg.ueIdentityIndexValue;
+  m_s1SapUser->SendPagingParameters (params);
+}
+
+void
+EpcEnbApplication::DoNotifyDataRadioBearerSetupCompleted (uint64_t imsi)
+{
+  m_s1apSapMme->NotifyBearerSetupCompleted (imsi);
 }
 
 }  // namespace ns3

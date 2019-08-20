@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2017 Alexander Krotov
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,7 @@
  *
  * Author: Alexander Krotov <krotov@iitp.ru>
  *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
  */
 
 #include "lte-test-aggregation-throughput-scale.h"
@@ -79,6 +81,9 @@ LteAggregationThroughputScaleTestCase::GetThroughput (uint8_t numberOfComponentC
   Config::SetDefault ("ns3::LteEnbNetDevice::UlBandwidth", UintegerValue (25));
   Config::SetDefault ("ns3::LteUeNetDevice::DlEarfcn", UintegerValue (100));
 
+  //Set the TimeAlignmentTimer to max value so that only Carrier aggregation throughput scale can be tested
+  Config::SetDefault ("ns3::LteEnbRrc::TimeAlignmentTimer", UintegerValue (10240));
+
   auto lteHelper = CreateObject<LteHelper> ();
   lteHelper->SetAttribute ("PathlossModel", TypeIdValue (ns3::FriisSpectrumPropagationLossModel::GetTypeId ()));
   lteHelper->SetAttribute ("NumberOfComponentCarriers", UintegerValue (numberOfComponentCarriers));
@@ -116,6 +121,15 @@ LteAggregationThroughputScaleTestCase::GetThroughput (uint8_t numberOfComponentC
   std::map< uint8_t, Ptr<ComponentCarrierUe> > ueCcMap = ueDev->GetCcMap ();
   ueDev->SetDlEarfcn (ueCcMap.at (numberOfComponentCarriers - 1)->GetDlEarfcn ());
   lteHelper->Attach (ueDevs);
+
+  /**
+   * To get the correct throughput calculation,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state before the applications start sending data
+   */
+   ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+
+
   m_expectedCellId = enbDev->GetCcMap ().at (numberOfComponentCarriers - 1)->GetCellId ();
 
   // Applications

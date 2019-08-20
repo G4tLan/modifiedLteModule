@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *        (support for Paging;
+ *    integrated the RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 #ifndef EPC_UE_NAS_H
@@ -36,13 +46,12 @@ class EpcUeNas : public Object
   /// allow MemberLteAsSapUser<EpcUeNas> class friend access
   friend class MemberLteAsSapUser<EpcUeNas>;
 public:
-
-  /** 
+  /**
    * Constructor
    */
   EpcUeNas ();
 
-  /** 
+  /**
    * Destructor
    */
   virtual ~EpcUeNas ();
@@ -56,15 +65,15 @@ public:
   static TypeId GetTypeId (void);
 
 
-  /** 
-   * 
+  /**
+   *
    * \param dev the UE NetDevice
    */
   void SetDevice (Ptr<NetDevice> dev);
 
-  /** 
-   * 
-   * 
+  /**
+   *
+   *
    * \param imsi the unique UE identifier
    */
   void SetImsi (uint64_t imsi);
@@ -111,7 +120,7 @@ public:
 
   /**
    * \brief Causes NAS to tell AS to go to ACTIVE state.
-   * 
+   *
    * The end result is equivalent with EMM Registered + ECM Connected states.
    */
   void Connect ();
@@ -127,27 +136,27 @@ public:
    * RRC to be camped on a specific eNB.
    */
   void Connect (uint16_t cellId, uint32_t dlEarfcn);
- 
-  /** 
+
+  /**
    * instruct the NAS to disconnect
-   * 
+   *
    */
   void Disconnect ();
 
 
-  /** 
+  /**
    * Activate an EPS bearer
-   * 
+   *
    * \param bearer the characteristics of the bearer to be created
    * \param tft the TFT identifying the traffic that will go on this bearer
    */
   void ActivateEpsBearer (EpsBearer bearer, Ptr<EpcTft> tft);
 
-  /** 
+  /**
    * Enqueue an IP packet on the proper bearer for uplink transmission
-   * 
+   *
    * \param p the packet
-   * 
+   *
    * \return true if successful, false if an error occurred
    */
   bool Send (Ptr<Packet> p);
@@ -156,9 +165,9 @@ public:
   /**
    * Definition of NAS states as per "LTE - From theory to practice",
    * Section 3.2.3.2 "Connection Establishment and Release"
-   * 
+   *
    */
-  enum State 
+  enum State
   {
     OFF = 0,
     ATTACHING,
@@ -179,11 +188,17 @@ public:
    * \param [in] oldState The old State.
    * \param [in] newState the new State.
    */
-  typedef void (* StateTracedCallback)
+  typedef void (*StateTracedCallback)
     (const State oldState, const State newState);
- 
-private:
 
+
+  /**
+   * Send the buffered UL packets
+   *
+   */
+  void DoSendBufferedUlPackets ();
+
+private:
   // LTE AS SAP methods
   /// Notify successful connection
   void DoNotifyConnectionSuccessful ();
@@ -196,6 +211,7 @@ private:
    * \param packet the packet
    */
   void DoRecvData (Ptr<Packet> packet);
+  void DoDisconnect ();
 
   // internal methods
   /**
@@ -209,6 +225,11 @@ private:
    * \param s the destination state
    */
   void SwitchToState (State s);
+
+  /**
+   * Discard the buffered uplink packets when connection establishment fails
+   */
+  void DoDiscardBufferedUlPackets();
 
   /// The current UE NAS state.
   State m_state;
@@ -247,6 +268,31 @@ private:
   };
 
   std::list<BearerToBeActivated> m_bearersToBeActivatedList; ///< bearers to be activated list
+
+  /**
+   * bearers to be activated list maintained and to be used for reconnecting Ue after going out-of-sync
+   *
+   */
+  std::list<BearerToBeActivated> m_bearersToBeActivatedListForReconnection;
+
+  /**
+   * Maximum uplink buffer size set as configurable parameter
+   * (Not in standard)
+   * (Based on LteRlcUm:m_maxTxBufferSize)
+   * (Value set same as LteRlcUm:m_maxTxBufferSize)
+   */
+  uint32_t m_maxUlBufferSize;
+  uint32_t m_UlBufferSize;   ///< uplink buffer size
+  std::list < Ptr<Packet> > m_UlBuffer;  ///< uplink buffer
+
+  /**
+   * Add the packet to buffer and check if
+   * UE is in camped state. If yes, trigger
+   * the connect method to transition the
+   * UE to connected state
+   *
+   */
+  void AddPacketToBuffer (Ptr<Packet> packet);
 
 };
 

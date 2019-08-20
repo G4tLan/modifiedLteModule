@@ -53,6 +53,9 @@ def build(bld):
         'helper/radio-environment-map-helper.cc',
         'helper/lte-hex-grid-enb-topology-helper.cc',
         'helper/lte-global-pathloss-database.cc',
+        'helper/ra-preamble-phy-stats-calculator.cc',
+        'helper/ra-preamble-stats-calculator.cc',
+        'helper/ra-complete-stats-calculator.cc',
         'model/rem-spectrum-phy.cc',
         'model/ff-mac-common.cc',
         'model/ff-mac-csched-sap.cc',
@@ -131,7 +134,10 @@ def build(bld):
         'model/component-carrier.cc',
         'helper/cc-helper.cc',
         'model/component-carrier-ue.cc',
-        'model/component-carrier-enb.cc'
+        'model/component-carrier-enb.cc',
+        'model/lte-interference-multiple-rx.cc',
+        'model/lte-chunk-processor-multiple.cc',
+        'model/lte-prach-info.cc',
         ]
 
     module_test = bld.create_ns3_module_test_library('lte')
@@ -192,7 +198,12 @@ def build(bld):
         'test/lte-test-carrier-aggregation.cc',
         'test/lte-test-aggregation-throughput-scale.cc',
         'test/lte-test-ipv6-routing.cc',
-        'test/lte-test-carrier-aggregation-configuration.cc'
+        'test/lte-test-carrier-aggregation-configuration.cc',
+        'test/lte-test-cell-reselection.cc',
+        'test/lte-test-paging.cc',
+        'test/lte-test-uplink-synchronization.cc',
+        'test/lte-test-radio-link-failure.cc',
+        'test/lte-test-handover-failure.cc'
         ]
 
     headers = bld(features='ns3header')
@@ -244,6 +255,9 @@ def build(bld):
         'helper/radio-environment-map-helper.h',
         'helper/lte-hex-grid-enb-topology-helper.h',
         'helper/lte-global-pathloss-database.h',
+        'helper/ra-preamble-phy-stats-calculator.h',
+        'helper/ra-preamble-stats-calculator.h',
+        'helper/ra-complete-stats-calculator.h',
         'model/rem-spectrum-phy.h',
         'model/ff-mac-common.h',
         'model/ff-mac-csched-sap.h',
@@ -322,7 +336,10 @@ def build(bld):
         'helper/cc-helper.h',
         'model/component-carrier.h',
         'model/component-carrier-ue.h',
-        'model/component-carrier-enb.h'
+        'model/component-carrier-enb.h',
+        'model/lte-interference-multiple-rx.h',     
+        'model/lte-chunk-processor-multiple.h', 
+        'model/lte-prach-info.h',
         ]
 
     if (bld.env['ENABLE_EMU']):
@@ -332,4 +349,3 @@ def build(bld):
     if (bld.env['ENABLE_EXAMPLES']):
       bld.recurse('examples')
 
-    bld.ns3_python_bindings()

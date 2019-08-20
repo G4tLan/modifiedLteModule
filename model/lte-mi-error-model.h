@@ -27,6 +27,9 @@
  *
  * Subsequent integration in LENA and extension done by:
  *      Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */ 
 
 #ifndef LTE_MI_ERROR_MODEL_H
@@ -39,6 +42,7 @@
 #include <stdint.h>
 #include <ns3/spectrum-value.h>
 #include <ns3/lte-harq-phy.h>
+#include "ns3/traced-value.h"
 
 
 
@@ -47,6 +51,7 @@ namespace ns3 {
   
   /// PDCCH PCFICH curve size
   const uint16_t PDCCH_PCFICH_CURVE_SIZE = 46;
+  const uint16_t PRACH_CURVE_SIZE = 13;
   /// MI map QPSK size 
   const uint16_t MI_MAP_QPSK_SIZE = 797;
   /// MI map 16QAM size
@@ -72,6 +77,16 @@ struct TbStats_t
   double tbler; ///< tbler
   double mi; ///< mi
 };
+
+/**
+   * TracedCallback signature for sinr/errorrate.
+   * 
+   *
+   * \param [in] esinr in dB.
+   * \param [in] errorate.
+   */
+  typedef void (* SinrErrorrateTracedCallback)
+    (const double esinrDb, const double errorRate);
   
 
 
@@ -118,8 +133,18 @@ public:
   */  
   static double GetPcfichPdcchError (const SpectrumValue& sinr);
 
+  /** 
+  * \brief run the error-model algorithm for the specified PRACH channel
+  * \param sinr the perceived sinrs in the whole bandwidth
+  * \return the decodification error of the PRACH channel
+  * 
+  */ 
+  static double GetPrachError (const SpectrumValue& sinr);
 
-//private:
+
+
+private:
+  TracedCallback<double, double> m_prachSnrTrace;
 
 
 

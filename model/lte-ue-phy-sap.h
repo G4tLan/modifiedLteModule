@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (integrated the RACH realistic model
+ *    tate transition (taken from Lena-plus(work of Michele Polese))
+ *     and also enhanced the module)
  */
 
 
@@ -24,6 +34,8 @@
 #define LTE_UE_PHY_SAP_H
 
 #include <ns3/packet.h>
+#include "lte-ue-cmac-sap.h"
+#include "lte-control-messages.h"
 
 namespace ns3 {
 
@@ -56,10 +68,43 @@ public:
   /** 
    * send a preamble on the PRACH
    * 
-   * \param prachId the ID of the preamble
-   * \param raRnti the RA rnti
+   *
+   * \param msg the Prach preamble message to send
    */
-  virtual void SendRachPreamble (uint32_t prachId, uint32_t raRnti) = 0;
+  virtual void SendRachPreamble (Ptr<RachPreambleLteControlMessage> msg) = 0;
+
+  /** 
+  * Notify the reception of RAR
+  * 
+  * 
+  */
+  virtual void NotifyRarReceived(void) = 0;
+
+
+  /** 
+  * Notify that connection was released
+  * 
+  * 
+  */
+  virtual void NotifyConnectionExpired(void) = 0;
+
+  /**
+   * Configure PRACH PowerRamping
+   */
+  virtual void ConfigurePrach(LteUeCmacSapProvider::RachConfig rc) = 0;
+
+  /** 
+  * Delete prev RACH preambles that were not transmitted
+  * 
+  */
+  virtual void DeletePrachPreamble(void) = 0;
+
+  /**
+   * Reset the number of preamble transmission attempts
+   * to zero when random access is successfully completed.
+   * 
+   */
+  virtual void NotifyConnectionSuccessful(void)=0;
 
 };
 
@@ -95,6 +140,14 @@ public:
   * \param msg the Ideal Control Message to receive
   */
   virtual void ReceiveLteControlMessage (Ptr<LteControlMessage> msg) = 0;
+
+  /**
+  * 
+  * \brief Returns true if the msg3 is in the queue of packets to be transmitted
+  */
+  virtual bool Msg3Ready () = 0;
+
+  virtual void UpdateRaRnti(uint32_t raRnti) = 0;
 
 };
 

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for handover failure)
  */
 
 #ifndef EPC_X2_H
@@ -202,6 +205,13 @@ protected:
    * \param params EpcX2SapProvider::UeDataParams
    */
   virtual void DoSendUeData (EpcX2SapProvider::UeDataParams params);
+
+  /**
+   * Send Handover Cancel function
+   * \param params the handover cancel parameters
+   * 
+   */
+  virtual void DoSendHandoverCancel (EpcX2SapProvider::HandoverCancelParams params);
 
   EpcX2SapUser* m_x2SapUser; ///< X2 SAP user
   EpcX2SapProvider* m_x2SapProvider; ///< X2 SAP provider

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,7 +18,12 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  * Modified by: Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
- *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation) 
+ *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *      (support for paging;
+ *      integrated the RACH realistic model(taken from Lena-plus(work of Michele Polese))
+ *      and also enhanced the module)
  */
 
 #ifndef LTE_HELPER_H
@@ -42,6 +48,9 @@
 #include <ns3/component-carrier-enb.h>
 #include <ns3/cc-helper.h>
 #include <map>
+#include "ns3/ra-preamble-phy-stats-calculator.h"
+#include "ns3/ra-preamble-stats-calculator.h"
+#include "ns3/ra-complete-stats-calculator.h"
 
 namespace ns3 {
 
@@ -414,6 +423,35 @@ public:
    */
   void Attach (Ptr<NetDevice> ueDevice, Ptr<NetDevice> enbDevice);
 
+
+  /**
+   * \brief Enables automatic attachment of a set of UE devices to a suitable
+   *        cell using Idle mode initial cell selection procedure but does not 
+   *        perform connection
+   * \param ueDevices the set of UE devices to be attached
+   *
+   * By calling this, the UE will start the initial cell selection procedure at
+   * the beginning of simulation. 
+   *
+   * Note that this function can only be used in EPC-enabled simulation.
+   * 
+   */
+  void AttachAndDonotConnect (NetDeviceContainer ueDevices);
+
+  /**
+   * \brief Enables automatic attachment of a UE device to a suitable
+   *        cell using Idle mode initial cell selection procedure but does not 
+   *        perform connection
+   * \param ueDevice the UE device to be attached
+   *
+   * By calling this, the UE will start the initial cell selection procedure at
+   * the beginning of simulation. 
+   *
+   * Note that this function can only be used in EPC-enabled simulation.
+   * 
+   */
+  void AttachAndDonotConnect (Ptr<NetDevice> ueDevice);
+
   /** 
    * \brief Manual attachment of a set of UE devices to the network via the
    *        closest eNodeB (with respect to distance) among those in the set.
@@ -643,6 +681,34 @@ public:
   Ptr<RadioBearerStatsCalculator> GetPdcpStats (void);
 
   /**
+   * Enable trace sinks for RA preamble
+   * 
+   */
+  void EnableRaPreambleTraces (void);
+
+
+  /** 
+   * 
+   * \return the Ra Preamble stats calculator object
+   */
+  Ptr<RaPreambleStatsCalculator> GetRaPreambleStats (void);
+
+  /**
+   * Enable trace sinks for RA delay
+   * 
+   */
+  void EnableRaDelayTraces (void);
+
+  /** 
+   * 
+   * \return the Ra Delay stats calculator object
+   * 
+   */
+  Ptr<RaCompleteStatsCalculator> GetRaDelayStats (void);
+
+  
+
+  /**
    * Assign a fixed random variable stream number to the random variables used.
    *
    * The InstallEnbDevice() or InstallUeDevice method should have previously
@@ -732,7 +798,11 @@ private:
   /**
    * \brief This function create the component carrier based on provided configuration parameters
    */
-
+  /**
+   * get mobility model of UE
+   * 
+   */
+  Ptr<MobilityModel>  GetUEMobiltyModel (uint64_t imsi);
   /// The downlink LTE channel used in the simulation.
   Ptr<SpectrumChannel> m_downlinkChannel;
   /// The uplink LTE channel used in the simulation.
@@ -791,6 +861,10 @@ private:
   Ptr<RadioBearerStatsCalculator> m_pdcpStats;
   /// Connects RLC and PDCP statistics containers to appropriate trace sources
   RadioBearerStatsConnector m_radioBearerStatsConnector;
+  /// Container of RA preamble statistics
+  Ptr<RaPreambleStatsCalculator> m_raPreambleStats;
+  /// Container of RA delay statistics
+  Ptr<RaCompleteStatsCalculator> m_raDelayStats;
 
   /**
    * Helper which provides implementation of core network. Initially empty
@@ -817,6 +891,14 @@ private:
    * RRC signaling. If false, LteRrcProtocolReal will be used.
    */
   bool m_useIdealRrc;
+
+  /**
+   * The `UseIdealPrach` attribute. If true, ideal Prach will be used
+   * 
+   */
+  bool m_useIdealPrach;
+
+
   /**
    * The `AnrEnabled` attribute. Activate or deactivate Automatic Neighbour
    * Relation function.
@@ -846,6 +928,10 @@ private:
    * Number of component carriers that will be installed by default at eNodeB and UE devices.
    */
   uint16_t m_noOfCcs;
+
+  /// add mobility model of UE to map with IMSI as the key 
+  std::map< uint64_t, Ptr<MobilityModel>> m_ueMobilityModelMap;
+
 
 };   // end of `class LteHelper`
 

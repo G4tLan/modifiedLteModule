@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for handover failure)
  */
 
 #include "ns3/log.h"
@@ -358,6 +361,33 @@ EpcX2::RecvFromX2cSocket (Ptr<Socket> socket)
           NS_LOG_LOGIC ("cellMeasurementResultList size = " << params.cellMeasurementResultList.size ());
 
           m_x2SapUser->RecvResourceStatusUpdate (params);
+        }
+    }
+  else if (procedureCode == EpcX2Header::HandoverCancel) 
+    {
+      if (messageType == EpcX2Header::SuccessfulOutcome)
+        {
+          NS_LOG_LOGIC("Recv X2 message: HANDOVER CANCEL");
+
+          EpcX2HandoverCancelHeader x2HoCancelHeader;
+          packet->RemoveHeader (x2HoCancelHeader);
+
+          NS_LOG_INFO("X2 HandoverCancel header: " << x2HoCancelHeader);
+
+          EpcX2SapUser::HandoverCancelParams params;
+          params.oldEnbUeX2apId = x2HoCancelHeader.GetOldEnbUeX2apId ();
+          params.newEnbUeX2apId = x2HoCancelHeader.GetNewEnbUeX2apId ();
+          params.sourceCellId = cellsInfo->m_remoteCellId;
+          params.targetCellId = cellsInfo->m_localCellId;
+          params.cause = x2HoCancelHeader.GetCause ();
+
+          NS_LOG_LOGIC("oldEnbUeX2apId = " << params.oldEnbUeX2apId);
+          NS_LOG_LOGIC("newEnbUeX2apId = " << params.newEnbUeX2apId);
+          NS_LOG_LOGIC("sourceCellId = " << params.sourceCellId);
+          NS_LOG_LOGIC("targetCellId = " << params.targetCellId);
+          NS_LOG_LOGIC("cause = " << params.cause);
+
+          m_x2SapUser->RecvHandoverCancel (params);
         }
     }
   else
@@ -759,6 +789,52 @@ EpcX2::DoSendUeData (EpcX2SapProvider::UeDataParams params)
 
   NS_LOG_INFO ("Forward UE DATA through X2 interface");
   sourceSocket->SendTo (packet, 0, InetSocketAddress (targetIpAddr, m_x2uUdpPort));
+}
+
+void
+EpcX2::DoSendHandoverCancel (EpcX2SapProvider::HandoverCancelParams params)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_LOG_LOGIC ("oldEnbUeX2apId = " << params.oldEnbUeX2apId);
+  NS_LOG_LOGIC ("newEnbUeX2apId = " << params.newEnbUeX2apId);
+  NS_LOG_LOGIC ("sourceCellId = " << params.sourceCellId);
+  NS_LOG_LOGIC ("targetCellId = " << params.targetCellId);
+
+  NS_ASSERT_MSG (m_x2InterfaceSockets.find (params.targetCellId) != m_x2InterfaceSockets.end (),
+                 "Socket infos not defined for targetCellId = " << params.targetCellId);
+
+  Ptr<Socket> localSocket = m_x2InterfaceSockets [params.targetCellId]->m_localCtrlPlaneSocket;
+  Ipv4Address remoteIpAddr = m_x2InterfaceSockets [params.targetCellId]->m_remoteIpAddr;
+
+  NS_LOG_LOGIC ("localSocket = " << localSocket);
+  NS_LOG_LOGIC ("remoteIpAddr = " << remoteIpAddr);
+
+  NS_LOG_INFO ("Send X2 message: HANDOVER CANCEL");
+
+  // Build the X2 message
+  EpcX2HandoverCancelHeader x2HandoverCancelHeader;
+  x2HandoverCancelHeader.SetOldEnbUeX2apId (params.oldEnbUeX2apId);
+  x2HandoverCancelHeader.SetNewEnbUeX2apId (params.newEnbUeX2apId);
+  x2HandoverCancelHeader.SetCause (params.cause);
+
+  EpcX2Header x2Header;
+  x2Header.SetMessageType (EpcX2Header::SuccessfulOutcome);
+  x2Header.SetProcedureCode (EpcX2Header::HandoverCancel);
+  x2Header.SetLengthOfIes (x2HandoverCancelHeader.GetLengthOfIes ());
+  x2Header.SetNumberOfIes (x2HandoverCancelHeader.GetNumberOfIes ());
+
+  NS_LOG_INFO ("X2 header: " << x2Header);
+  NS_LOG_INFO ("X2 UeContextRelease header: " << x2HandoverCancelHeader);
+
+  // Build the X2 packet
+  Ptr<Packet> packet = Create <Packet> ();
+  packet->AddHeader (x2HandoverCancelHeader);
+  packet->AddHeader (x2Header);
+  NS_LOG_INFO ("packetLen = " << packet->GetSize ());
+
+  // Send the X2 message through the socket
+  localSocket->SendTo (packet, 0, InetSocketAddress (remoteIpAddr, m_x2cUdpPort));
 }
 
 } // namespace ns3

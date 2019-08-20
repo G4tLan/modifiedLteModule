@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Authors: Nicola Baldo <nbaldo@cttc.es>
  *          Lluis Parcerisa <lparcerisa@cttc.cat>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging, Radio Link Failure, Handover Failure, uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 
@@ -253,6 +263,20 @@ public:
   {
     uint8_t preambleTransMax; ///< preamble transmit maximum
     uint8_t raResponseWindowSize; ///< RA response window size
+    // the following is transmitted with sib2 to 
+    //advertise which is the configuration index of the prach
+    // TODO move this in another struct (prach-config on RadioResourceConfigCommon)
+    
+    uint8_t raPrachConfigurationIndex;
+    uint8_t contentionResolutionTimer;
+
+  };
+
+  struct PowerRampingParameters
+  {
+    // 3GPP TS 36.331
+    int8_t powerRampingStep; //dBm 0,2,4,6
+    int8_t preambleInitialReceivedTargetPower; // dBm -120, -118, -116, -114, ..., -90
   };
 
   /// RachConfigCommon structure
@@ -260,6 +284,7 @@ public:
   {
     PreambleInfo preambleInfo; ///< preamble info
     RaSupervisionInfo raSupervisionInfo; ///< RA supervision info
+    PowerRampingParameters powerRampingParameters;
   };
 
   /// RadioResourceConfigCommon structure
@@ -577,6 +602,16 @@ public:
     OTHER_FAILURE
   };
 
+  /**
+   * Paging parameters 
+   */
+  struct PcchConfig
+  {
+    enum DefaultPagingCycle {RF_32, RF_64, RF_128, RF_256} defaultPagingCycle;
+    enum Nb { FOUR_T, TWO_T, ONE_T, HALF_T, QUARTER_T, ONE_EIGHTH_T,
+      ONE_SIXTEENTH_T, ONE_THIRTY_SECOND_T} nB;
+  };//3GPP TS 36.331 6.3.2
+
   /// MasterInformationBlock structure
   struct MasterInformationBlock
   {
@@ -596,6 +631,8 @@ public:
   {
     RadioResourceConfigCommonSib radioResourceConfigCommon; ///< radio resource config common
     FreqInfo freqInfo; ///< frequency info
+    uint16_t timeAlignmentTimerCommon; //duration of the timeAlignmentTimer applied by all Ues connected to an eNodeB 
+    PcchConfig pcchConfig;
   };
 
   /// SystemInformation structure
@@ -678,7 +715,7 @@ public:
     std::list<MeasResultEutra> measResultListEutra; ///< measure result list eutra
     bool haveScellsMeas; ///< has SCells measure
     MeasResultServFreqList measScellResultList; ///< measure SCell result list
-    Vector uePosition;
+    Vector uePosition;		
     uint64_t imsi;
   };
 
@@ -841,6 +878,7 @@ public:
     bool haveNonCriticalExtension; ///< have critical extension?
     /// 3GPP TS 36.331 v.11.10 R11 Sec. 6.2.2 pag. 147 (also known as ETSI TS 136 331 v.11.10 Feb-2015)
     NonCriticalExtensionConfiguration nonCriticalExtension;
+    bool isUeLeaving;
  };
 
   /// RrcConnectionReconfigurationCompleted structure
@@ -897,6 +935,24 @@ public:
   struct MeasurementReport
   {
     MeasResults measResults; ///< measure results
+  };
+
+  //PagingRecord structure, see 3GPP TS 36.331 6.2.2 
+  struct PagingRecord
+  {
+    uint64_t pagingUeIdentity; //Provides the NAS identity of the UE that is being paged(s-tmsi or imsi)
+    enum CNDomain
+    {
+      PS, CS
+    } cnDomain;//Indicates the origin of paging.
+  };
+
+  ///RRC paging message structure, see 3GPP TS 36.331  6.2.2 
+  struct RrcPagingMessage
+  {
+    std::vector<PagingRecord> pagingRecordList;//list of paging records
+    bool systemInfoModification;//If present: indication of a BCCH modification other than SIB10, SIB11, SIB12 and SIB14.
+    bool etwsIndication;//If present: indication of an ETWS primary notification and/ or ETWS secondary notification.
   };
 
 };
@@ -973,6 +1029,24 @@ public:
    */
   virtual void SendMeasurementReport (MeasurementReport msg) = 0;
 
+  /**
+   * Notify eNodeB to start the parallel time alignment timer when UE receives
+   * random access response
+   * 
+   *
+   * \param timeAlignmentTimer the duration of the timer
+   * \param rnti the RNTI of the UE whose timer has to be started/restarted
+   */
+  virtual void NotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti)=0;
+
+  /**
+   * Notify eNodeB to release UE context once radio link failure or random access failure is detected
+   * (Needed since no RLF detection mechanism at eNodeB is implemented)
+   * 
+   *
+   * \param rnti the C-RNTI of the UE
+   */
+   virtual void NotifyEnbToReleaseUeContext (uint16_t rnti)=0;
 };
 
 
@@ -1053,6 +1127,12 @@ public:
    * \param msg the message
    */
   virtual void RecvRrcConnectionReject (RrcConnectionReject msg) = 0;
+
+  /**
+   * Receive notification from eNodeB when the 
+   * inactivity timer of the UE expires.
+   */
+  virtual void RecvNotificationOfUeInactivityTimerExpiry ()=0;
 
 };
 
@@ -1173,6 +1253,26 @@ public:
    */
   virtual RrcConnectionReconfiguration DecodeHandoverCommand (Ptr<Packet> p) = 0;
 
+  /**
+   * Reset the UeRrcSapProvider in the m_enbRrcSapProviderMap to point
+   * to the UE from which RRC connection request was received
+   * (Scenario: RRC connection request from UE 1 is lost and
+   * from UE 2 is received--no collision)
+   * 
+   *
+   * \param imsi the IMSI of the UE
+   * \param rnti the RNTI of the UE
+   */
+  virtual void ResetUeRrcSapProvider (uint64_t imsi, uint16_t rnti)=0;
+
+  /**
+   * Notify the UE to reset to the camped state when the 
+   * inactivity timer of the UE expires at the eNodeB.
+   * 
+   * \param rnti the RNTI of the UE
+   */
+  virtual void NotifyUeInactivityTimerExpiry(uint16_t rnti)=0;
+
 };
 
 
@@ -1258,6 +1358,22 @@ public:
    */
   virtual void RecvMeasurementReport (uint16_t rnti, MeasurementReport msg) = 0;
 
+  /**
+   * Once the eNodeB receives the notification from UE, restart the time alignment timer
+   * 
+   */
+  virtual void StartTimeAlignmentTimer (Time timeAlignmentTimer, uint16_t rnti)=0;
+
+  /**
+   * Receive the notification from UE to remove the UE context
+   * once radio link failure or random access failure is detected
+   * (Needed since no RLF detection mechanism at eNodeB is implemented)
+   * 
+   *
+   * \param rnti the C-RNTI of the UE
+   */
+  virtual void RecvNotificationToReleaseUeContext(uint16_t rnti)=0;
+
 };
 
 
@@ -1294,6 +1410,23 @@ public:
   virtual void SendRrcConnectionReestablishmentRequest (RrcConnectionReestablishmentRequest msg);
   virtual void SendRrcConnectionReestablishmentComplete (RrcConnectionReestablishmentComplete msg);
   virtual void SendMeasurementReport (MeasurementReport msg);
+  /**
+   * Notify eNodeB to start the parallel time alignment timer when UE receives
+   * random access response
+   * 
+   *
+   * \param timeAlignmentTimer the duration of the timer
+   * \param rnti the RNTI of the UE whose timer has to be started/restarted
+   */
+  virtual void NotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti);
+  /**
+   * Notify eNodeB to release UE context once radio link failure or random access failure is detected
+   * (Needed since no RLF detection mechanism at eNodeB is implemented)
+   * 
+   *
+   * \param rnti the C-RNTI of the UE
+   */
+   virtual void NotifyEnbToReleaseUeContext (uint16_t rnti);
 
 private:
   MemberLteUeRrcSapUser ();
@@ -1360,6 +1493,20 @@ MemberLteUeRrcSapUser<C>::SendMeasurementReport (MeasurementReport msg)
   m_owner->DoSendMeasurementReport (msg);
 }
 
+template <class C>
+void
+MemberLteUeRrcSapUser<C>::NotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti)
+{
+	m_owner->DoNotifyEnbTimeAlignmentTimerToStart(timeAlignmentTimer, rnti);
+}
+
+template <class C>
+void
+MemberLteUeRrcSapUser<C>::NotifyEnbToReleaseUeContext (uint16_t rnti)
+{
+	m_owner->DoNotifyEnbToReleaseUeContext(rnti);
+}
+
 /**
  * Template for the implementation of the LteUeRrcSapProvider as a member
  * of an owner class of type C to which all methods are forwarded
@@ -1385,6 +1532,7 @@ public:
   virtual void RecvRrcConnectionReestablishmentReject (RrcConnectionReestablishmentReject msg);
   virtual void RecvRrcConnectionRelease (RrcConnectionRelease msg);
   virtual void RecvRrcConnectionReject (RrcConnectionReject msg);
+  virtual void RecvNotificationOfUeInactivityTimerExpiry ();
 
 private:
   MemberLteUeRrcSapProvider ();
@@ -1458,6 +1606,12 @@ MemberLteUeRrcSapProvider<C>::RecvRrcConnectionReject (RrcConnectionReject msg)
   Simulator::ScheduleNow (&C::DoRecvRrcConnectionReject, m_owner, msg);
 }
 
+template <class C>
+void
+MemberLteUeRrcSapProvider<C>::RecvNotificationOfUeInactivityTimerExpiry ()
+{
+  Simulator::ScheduleNow (&C::DoResetToCamped, m_owner);
+}
 
 /**
  * Template for the implementation of the LteEnbRrcSapUser as a member
@@ -1490,6 +1644,8 @@ public:
   virtual HandoverPreparationInfo DecodeHandoverPreparationInformation (Ptr<Packet> p);
   virtual Ptr<Packet> EncodeHandoverCommand (RrcConnectionReconfiguration msg);
   virtual RrcConnectionReconfiguration DecodeHandoverCommand (Ptr<Packet> p);
+  virtual void ResetUeRrcSapProvider (uint64_t imsi, uint16_t rnti);
+  virtual void NotifyUeInactivityTimerExpiry(uint16_t rnti);
 
 private:
   MemberLteEnbRrcSapUser ();
@@ -1599,6 +1755,20 @@ MemberLteEnbRrcSapUser<C>::DecodeHandoverCommand (Ptr<Packet> p)
   return m_owner->DoDecodeHandoverCommand (p);
 }
 
+template <class C>
+void
+MemberLteEnbRrcSapUser<C>::ResetUeRrcSapProvider (uint64_t imsi, uint16_t rnti)
+{
+  m_owner->DoResetUeRrcSapProvider(imsi, rnti);
+}
+
+template <class C>
+void
+MemberLteEnbRrcSapUser<C>::NotifyUeInactivityTimerExpiry(uint16_t rnti)
+{
+  m_owner->DoNotifyUeInactivityTimerExpiry(rnti);
+}
+
 /**
  * Template for the implementation of the LteEnbRrcSapProvider as a member
  * of an owner class of type C to which all methods are forwarded
@@ -1624,6 +1794,8 @@ public:
   virtual void RecvRrcConnectionReestablishmentRequest (uint16_t rnti, RrcConnectionReestablishmentRequest msg);
   virtual void RecvRrcConnectionReestablishmentComplete (uint16_t rnti, RrcConnectionReestablishmentComplete msg);
   virtual void RecvMeasurementReport (uint16_t rnti, MeasurementReport msg);
+  virtual void StartTimeAlignmentTimer (Time timeAlignmentTimer, uint16_t rnti);
+  virtual void RecvNotificationToReleaseUeContext(uint16_t rnti);
 
 private:
   MemberLteEnbRrcSapProvider ();
@@ -1690,13 +1862,17 @@ MemberLteEnbRrcSapProvider<C>::RecvMeasurementReport (uint16_t rnti, Measurement
   Simulator::ScheduleNow (&C::DoRecvMeasurementReport, m_owner, rnti, msg);
 }
 
+template <class C>
+void MemberLteEnbRrcSapProvider<C>::StartTimeAlignmentTimer (Time timeAlignmentTimer, uint16_t rnti)
+{
+  Simulator::ScheduleNow (&C::DoStartTimeAlignmentTimer, m_owner, timeAlignmentTimer, rnti);
+}
 
-
-
-
-
-
-
+template <class C>
+void MemberLteEnbRrcSapProvider<C>::RecvNotificationToReleaseUeContext(uint16_t rnti)
+{
+  Simulator::ScheduleNow (&C::RemoveUeContextAtEnodeb, m_owner, rnti);
+}
 
 
 

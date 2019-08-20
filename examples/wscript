@@ -61,6 +61,21 @@ def build(bld):
     obj = bld.create_ns3_program('lena-uplink-power-control',
                                  ['lte'])
     obj.source = 'lena-uplink-power-control.cc'
+    obj = bld.create_ns3_program('lena-uplink-synchronization',
+                                 ['lte'])
+    obj.source = 'lena-uplink-synchronization.cc'
+    obj = bld.create_ns3_program('lena-radio-link-failure',
+                                 ['lte'])
+    obj.source = 'lena-radio-link-failure.cc'
+    obj = bld.create_ns3_program('lena-paging',
+                                 ['lte'])
+    obj.source = 'lena-paging.cc'
+    obj = bld.create_ns3_program('lena-handover-failure',
+                                 ['lte'])
+    obj.source = 'lena-handover-failure.cc'
+    obj = bld.create_ns3_program('lena-cell-reselection',
+                                 ['lte'])
+    obj.source = 'lena-cell-reselection.cc'
     
     if bld.env['ENABLE_EMU']:
         obj = bld.create_ns3_program('lena-simple-epc-emu',

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
  */
 
 
@@ -41,7 +44,8 @@
 #include "ns3/abort.h"
 #include "ns3/mobility-helper.h"
 
-
+#include <ns3/lte-ue-net-device.h>
+#include <ns3/lte-ue-rrc.h>
 
 
 using namespace ns3;
@@ -236,7 +240,14 @@ LteEpcE2eDataTestCase::DoRun ()
           // we can now attach the UE, which will also activate the default EPS bearer
           lteHelper->Attach (ueLteDevice, *enbLteDevIt);        
       
-  
+          /**
+           * To get the expected number of received packets,
+           * manually set the m_connectionPending flag for the UE so that
+           * it can transition to RRC CONNECTED state before the applications
+           * send the packets.
+           */
+          ueLteDevice->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+
           uint16_t dlPort = 2000;          
           for (uint32_t b = 0; b < enbit->ues.at (u).bearers.size (); ++b)
             {              

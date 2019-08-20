@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_S1AP_SAP_H
@@ -128,6 +131,15 @@ public:
    * \param erabToBeSwitchedInDownlinkList
    */
   virtual void PathSwitchRequest (uint64_t enbUeS1Id, uint64_t mmeUeS1Id, uint16_t gci, std::list<ErabSwitchedInDownlinkItem> erabToBeSwitchedInDownlinkList) = 0;
+
+  /**
+   * Notify the MME that the bearers are setup and to send the buffered
+   * downlink packets to UE
+   * 
+   *
+   * \param imsi imsi of the UE
+   */
+  virtual void NotifyBearerSetupCompleted(uint64_t imsi)=0;
 };
 
 
@@ -186,7 +198,27 @@ public:
    */
   virtual void PathSwitchRequestAcknowledge (uint64_t enbUeS1Id, uint64_t mmeUeS1Id, uint16_t cgi, std::list<ErabSwitchedInUplinkItem> erabToBeSwitchedInUplinkList) = 0;
 
+  /**
+   * S1AP paging message, see 3GPP TS 36.413 9.1.6.
+   * 
+   */
+  struct S1apPagingMessage
+  {
+	uint16_t  ueIdentityIndexValue;///< used by the eNB to calculate the Paging Frame
+	uint64_t uePagingId;///< Represents the Identity with which the UE is page, in practice, we use the IMSI
+	enum{PS, CS} cnDomain; ///< indicates whether Paging is originated from the CS or PS domain
+	uint64_t pagingPriority;///< indicates the paging priority for paging a UE, not used
+	uint32_t pagingDrx;///< UE specific DRX value, not used
+  };
 
+  /**
+   * Receive the S1AP paging message from the MME and
+   * construct the RRC paging message.
+   * 
+   *
+   * \param msg S1AP paging message
+   */
+  virtual void RecvS1apPagingMessage (S1apPagingMessage msg)=0;
 };
 
 
@@ -243,6 +275,15 @@ public:
    */
   virtual void PathSwitchRequest (uint64_t enbUeS1Id, uint64_t mmeUeS1Id, uint16_t cgi, std::list<ErabSwitchedInDownlinkItem> erabToBeSwitchedInDownlinkList);
 
+  /**
+   * Notify the MME the bearers are setup and to send the buffered
+   * downlink packets to UE.
+   * 
+   *
+   * \param imsi imsi of the UE
+   */
+  virtual void NotifyBearerSetupCompleted(uint64_t imsi);
+
 private:
   MemberEpcS1apSapMme ();
   C* m_owner; ///< owner class
@@ -283,9 +324,11 @@ void MemberEpcS1apSapMme<C>::PathSwitchRequest (uint64_t enbUeS1Id, uint64_t mme
   m_owner->DoPathSwitchRequest (enbUeS1Id, mmeUeS1Id, cgi, erabToBeSwitchedInDownlinkList);
 }
 
-
-
-
+template <class C>
+void MemberEpcS1apSapMme<C>::NotifyBearerSetupCompleted(uint64_t imsi)
+{
+  m_owner->DoNotifyBearerSetupCompleted(imsi);
+}
 
 
 
@@ -322,6 +365,15 @@ public:
    */
   virtual void PathSwitchRequestAcknowledge (uint64_t enbUeS1Id, uint64_t mmeUeS1Id, uint16_t cgi, std::list<ErabSwitchedInUplinkItem> erabToBeSwitchedInUplinkList);
 
+  /**
+   * Receive the S1AP paging message from the MME and
+   * construct the RRC paging message.
+   * 
+   *
+   * \param msg S1AP paging message
+   */
+  virtual void RecvS1apPagingMessage (S1apPagingMessage msg);
+
 private:
   MemberEpcS1apSapEnb ();
   C* m_owner; ///< owner class
@@ -350,7 +402,11 @@ void MemberEpcS1apSapEnb<C>::PathSwitchRequestAcknowledge (uint64_t enbUeS1Id, u
   m_owner->DoPathSwitchRequestAcknowledge (enbUeS1Id, mmeUeS1Id, cgi, erabToBeSwitchedInUplinkList);
 }
 
-
+template <class C>
+void MemberEpcS1apSapEnb<C>::RecvS1apPagingMessage (S1apPagingMessage msg)
+{
+  m_owner->DoRecvS1apPagingMessage(msg);
+}
 
 
 

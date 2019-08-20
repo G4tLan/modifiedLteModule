@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for handover failure)
  */
 
 #ifndef EPC_X2_HEADER_H
@@ -85,6 +88,7 @@ public:
   /// Procedure code enumeration
   enum ProcedureCode_t {
     HandoverPreparation     = 0,
+    HandoverCancel          = 1,
     LoadIndication          = 2,
     SnStatusTransfer        = 4,
     UeContextRelease        = 5,
@@ -653,6 +657,78 @@ private:
   std::vector <EpcX2Sap::CellMeasurementResultItem> m_cellMeasurementResultList; ///< cell measurement result list
 };
 
+/**
+ * EpcX2HandoverCancelHeader
+ */
+class EpcX2HandoverCancelHeader : public Header
+{
+public:
+  EpcX2HandoverCancelHeader ();
+  virtual ~EpcX2HandoverCancelHeader ();
+
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
+  virtual TypeId GetInstanceTypeId (void) const;
+  virtual uint32_t GetSerializedSize (void) const;
+  virtual void Serialize (Buffer::Iterator start) const;
+  virtual uint32_t Deserialize (Buffer::Iterator start);
+  virtual void Print (std::ostream &os) const;
+
+  /**
+   * Get old ENB UE X2 AP ID function
+   * \returns the old ENB UE X2 AP ID
+   */
+  uint16_t GetOldEnbUeX2apId () const;
+  /**
+   * Set old ENB UE X2 AP ID function
+   * \param x2apId the old ENB UE X2 AP ID
+   */
+  void SetOldEnbUeX2apId (uint16_t x2apId);
+
+  /**
+   * Get new ENB UE X2 AP ID function
+   * \returns the new ENB UE X2 AP ID
+   */
+  uint16_t GetNewEnbUeX2apId () const;
+  /**
+   * Set new ENB UE X2 AP ID function
+   * \param x2apId the new ENB UE X2 AP ID
+   */
+  void SetNewEnbUeX2apId (uint16_t x2apId);
+
+  /**
+   * Get cause function
+   * \returns the cause
+   */
+  uint16_t GetCause () const;
+  /**
+   * Set cause function
+   * \param cause
+   */
+  void SetCause (uint16_t cause);
+
+  /**
+   * Get length of IEs function
+   * \returns the length of IEs
+   */
+  uint32_t GetLengthOfIes () const;
+  /**
+   * Get number of IEs function
+   * \returns the number of IEs
+   */
+  uint32_t GetNumberOfIes () const;
+
+private:
+  uint32_t          m_numberOfIes; ///< number of IEs
+  uint32_t          m_headerLength; ///< header length
+
+  uint16_t          m_oldEnbUeX2apId; ///< old ENB UE X2 AP ID
+  uint16_t          m_newEnbUeX2apId; ///< new ENB UE X2 AP ID
+  uint16_t          m_cause; ///< cause
+};
 
 } // namespace ns3
 

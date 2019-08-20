@@ -1,0 +1,157 @@
+                                            ns-3 ELENA RELEASE NOTES
+
+This will provide a categorized list of all new features which ELENA extension brings to original ns-3 code as well as 
+the list of all new changes/additions to the extension that come with new version to be appended to the top of this list 
+(most recent releases first).
+
+Release 1.1
+===========
+
+The second public release of ELENA extension code to ns-3 community on 07-06-2019.
+
+Design changes:
+---------------
+
+- To avoid triggering repeated random access failures (which occur during RRC connection establishment) when UL or DL data arrives 
+  during bad connectivity, cell reselection is priotiorized and ensured it is performed atleast once after the first 
+  random access failure in order to select a better cell. Then, the random access procedure is resumed upon UL or DL data arrival.
+- UE shutdown/deactivation and reactivation methods are added to deactivate and reactivate the UE from outside the LTE module 
+  dynamically during runtime. When the UE is deactivated, it transitions to IDLE_START state and does not transmit or receive signals
+  until it is reactivated.
+
+Bug fixes:
+----------
+
+- When UE resets to idle state due to any connection failure and performs the cell selection procedure, spectrum model mismatch error 
+  occurs if the DL data or ctrl info is sent from eNB before the cell selection procedure is started. So to avoid this, the UE 
+  first transitions to IDLE_CAMPED_NORMALLY state and then the cell selection procedure is started to select the suitable cell in the 
+  next full millisecond. 
+- Added removal of UE context at eNodeB and the bearer info at SGW/PGW when the inactivity timer expires.
+- Cancel the scheduled event of cell reselection when UE leaves IDLE_CAMPED_NORMALLY state
+
+
+
+Release 1.0 
+===========
+
+The first public release of ELENA extension code to ns-3 community on 07-12-2018.
+
+
+Design changes addressed during the internal revision:
+------------------------------------------------------
+
+- Upon inactivity timer expiration, when UE is not under any abnormal failure condition, it should camp on the last cell for which it
+  was in RRC_CONNECTED state. Hence, eNodeB notifies UE about inactivity timer expiry through another direct function call by using 
+  the SAP between UE and eNB RRC instead of sending the RRC connection release message. 
+- In RLF detection, a separation of 10ms is introduced between successive in-sync or out-of-sync indications (i.e during this time
+  duration the DL SINR is not evaluated against Qout or Qin thresholds).
+- For large simulations, SRS limitation is eliminated by first checking for SRS availability at the eNodeB before adding a new UE 
+  context. If no SRS is available for the remainder of random access attempts by the UE, random access failure is triggered transitioning 
+  the UE to IDLE_CAMPED_NORMALLY(initial random access) or IDLE_CELL_SEARCH (handover and random access in connected state cases) state. 
+  The UE may reselect to a better cell in the camped state or attempt to connect to the same one if the new data arrives. In this way, the 
+  simulation can be continued without interruption.
+- The original behavior to drop packets if the UE NAS state is OFF is maintained, and packets are buffered only when the UE NAS state is 
+  ATTACHING (UE enters the ATTACHING state when it camps on a cell and leaves the state when RRC connection is established).
+- The setting and resetting of m_downlinkInSync flag in LteUePhy class has much more cleaner implementation.
+
+Bug fixes addressed during the internal revision:
+-------------------------------------------------
+
+- When radio link failure, handover failure or random access failure in RRC_CONNECTED state is detected, UE transitions from the 
+  RRC_CONNECTED to RRC_IDLE state and performs cell selection to camp on a suitable cell. This is implemented as per the standard 
+  (TS 36.331: 5.3.11.2).
+- In RLF detection while evaluating out-of-sync condition, if SINR > Qout  threshold, LteUePhy::m_numOfFrames & LteUeRrc::m_noOfSyncIndications 
+  parameters are reset to zero. Same solution is applied if  SINR < Qin while evaluating in-sync condition.
+- Failing and crashing test cases were corrected and verified.
+
+
+
+Release 0.1
+===========
+
+The first internal release submitted to ns-3 LTE developers/maintainers team on 23-09-2018.
+
+
+New features that extend original ns-3.29 LTE model functionalities (grouped overview).
+---------------------------------------------------------------------------------------
+
+1) Paging
+
+- Paging procedure to establish a RRC connection between UE and eNodeB (IDLE to CONNECTED state transition) when 
+  downlink data has to be sent.
+
+2) Time Alignment
+
+- Uplink synchronization feature is simulated by the transmission of newly implemented timing advance messages during data 
+  transfer. The messages are sent based on the distance between UE and eNodeB (as in ns-3 frames are always assumed to be 
+  aligned). Thus, only the TimeAlignmentTimer is restarted and no uplink transmission timing adjustments is applied at the UE.
+- The duration of the TimeAlignmentTimer is set to a fixed value (static configuration) or changes based on the UE speed 
+  (dynamic configuration) depending on the configuration selected.
+- The Random Access procedures in RRC connected state are also implemented to regain the uplink synchronization of the UE 
+  upon data arrival (DL or UL). Transition from connected OUT-OF-SYNC to connected IN-SYNC state takes place.
+
+3) Radio Link Failure
+
+- Radio Link Failure procedure is added with in-sync and out-of-sync indications to detect spotty coverage or poor signal 
+  quality cases. Upon detection, the RRC connection is released (CONNECTED to IDLE state transition) and no RRC connection 
+  reestablishment is carried out.
+
+4) Handover Failure
+
+- Handover Failure mechanism is added  to transition the UE from CONNECTED to IDLE state by sending an ideal RRC connection 
+  release message from eNodeB to UE upon expiry of handover timers, maximal non-contention preambles number is reached or 
+  Random Access Failure occurred. Upon detection, no RRC connection reestablishment is carried out.
+- The introduction of the handover cancel message (as per 3GPP standard) to remove UE context at target eNodeB (if present) 
+  and the reuse of handover preparation failure message to remove UE context at source eNodeB upon handover failure (to avoid 
+  unwanted errors).
+
+5) Cell Reselection
+
+- Cell reselection procedure is implemented to provide the idle mode mobility which ensures the UE is always camped on the best 
+  cell. Mobility dependent cell reselection is also supported.
+
+6) Random Access
+
+- The realistic Random Access module from LENA+ (https://github.com/signetlabdei/lena-plus) is integrated into ns-3.29 which 
+  provides message 1 and message 3 collision detection mechanisms, preamble power ramping and contention resolution.
+- The realistic Random Access module does not solve contention if at least one of the message 3 does not collide with other 
+  message 3 (for UEs with the same RNTI). Contention Resolution message is added as LteControlMessage to resolve contention 
+  and it is sent in parallel with Connection Setup or Connection Reconfiguration (message 4).
+- The procedure is created to inform the eNodeB in an ideal way to remove the UE context at eNodeB and the core network when 
+  random access failure occurs.
+
+7) States transition implementation (IDLE to CONNECTED, CONNECTED to IDLE)
+
+- The transition procedure from CONNECTED to IDLE state (RRC connection release) is created at UE by appropriate implementation 
+  of the reset methods at each of the relevant protocol stack layers of UE.
+- The procedure to transition UE transitions from CONNECTED to IDLE state is created to send the RRC connection release when 
+  the appropriate connection setup timer expires.
+- The RRC connection release message is modified to be sent in an ideal manner for both RRC ideal and real protocols to ensure 
+  the UE transitions to idle state upon expiration of any eNodeB timers or failure detections.
+- UE-triggered service request procedure to establish an RRC connection between UE and eNodeB (from IDLE to CONNECTED state 
+  transition) when uplink data has to be sent.
+- Inactivity timer is implemented to detect UE transmission inactivity and release the RRC connection.
+
+
+List of bug fixes for LTE model of ns-3.29 release version (without ELENA extension code)
+-----------------------------------------------------------------------------------------
+
+- In the LteUeRrc::VarMeasReportListAdd method,  measReportIt->second.periodicReportTimer was not cancelled (as it might be still 
+  running in some cases) before sending a new MeasurementReport to eNodeB. This issue was causing some errors and interrupting 
+  the simulation. This has been fixed in the new ns3.29 LTE patch. The timer is cancelled before scheduling the new event.
+- The data type of the key value of LteEnbMac::m_rapIdRntiMap parameter was changed from uint8_t to uint_16t as the key is RNTI 
+  (which is a 16 bit value). Storing the 16 bit RNTI in uint8_t was causing overflow errors.
+- The non-contention preamble assigned to UE during handover or PDCCH order is valid only until the time duration of the “expiryTime” 
+  of the preamble is reached. This timer value is only maintained at the eNodeB and the UE has no way of knowing if this timer has 
+  expired. If the UE tries to send the preamble again after the expiryTime and the preamble is re-assigned to another UE, it results 
+  in errors. This has been solved by re-assigning the preamble to another UE only if it is not being used (An UE can be using the 
+  preamble even after the expiryTime duration).
+- If the RRC connection setup timer expires when the UE is in CONNECTED_NORMALLY state (RRC connection setup is received by UE but RRC 
+  connection setup complete has not reached eNodeB), the deletion of UE context at eNodeB causes errors. This has been solved by 
+  notifying the UE through RRC connection release message to transition to IDLE_CAMPED_NORMALLY state when this scenario occurs.
+- Bug in EpcSgwPgwApplication::UeInfo::AddBearer method: Bearers are added when eNodeB sends InitialUeMessage to EPC (upon receiving 
+  RrcConnectionRequest from the UE). Due to random access being attempted multiple times (due to expiration of timers or loss of 
+  messages, before a successful connection is established), eNodeB sends multiple (InitialUeMessage)s to EPC for same UE (due to 
+  receiving multiple (RrcConnectionRequest)s from the UE). Thus it causes many TFTs to be added to the classifier for the same bearer 
+  instead of having one TFT per bearer. Bug Fix: Hence, the bearer is added to m_teidByBearerIdMap and m_tftClassifier only if 
+  it is not present.

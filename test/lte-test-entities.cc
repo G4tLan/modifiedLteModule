@@ -713,6 +713,11 @@ EpcTestRrc::DoPathSwitchRequestAcknowledge (EpcEnbS1SapUser::PathSwitchRequestAc
 
 }
 
+void
+EpcTestRrc::ConstructPagingMsg (EpcEnbS1SapUser::PagingParameters uePagingParameters)
+{
+
+}
 
 } // namespace ns3
 

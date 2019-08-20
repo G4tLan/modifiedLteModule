@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011-2013 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,11 @@
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include <ns3/object.h>
@@ -213,6 +219,17 @@ LenaDataPhyErrorModelTestCase::DoRun (void)
   // Attach a UE to a eNB
   lena->Attach (ueDevs, enbDevs.Get (0));
 
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  for (int i = 0; i < m_nUser; i++)
+    {
+      Ptr<NetDevice> ueDev = ueDevs.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
+
   // Activate an EPS bearer
   enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
   EpsBearer bearer (q);
@@ -369,6 +386,15 @@ LenaDlCtrlPhyErrorModelTestCase::DoRun (void)
   // Attach a UE to one eNB (the others are interfering ones)
   lena->Attach (ueDevs, enbDevs.Get (0));
   
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev = ueDevs.Get (0);
+  ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+
+
   // Activate an EPS bearer
   enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
   EpsBearer bearer (q);

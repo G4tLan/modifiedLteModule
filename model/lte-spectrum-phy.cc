@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009, 2011 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,6 +20,14 @@
  * Author: Nicola Baldo <nbaldo@cttc.es>
  *         Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <marco.miozzo@cttc.es> (add physical error model)
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 
@@ -38,6 +48,7 @@
 #include <ns3/boolean.h>
 #include <ns3/double.h>
 #include <ns3/config.h>
+#include "lte-interference-multiple-rx.h"
 
 namespace ns3 {
 
@@ -139,6 +150,7 @@ LteSpectrumPhy::LteSpectrumPhy ()
   m_random->SetAttribute ("Max", DoubleValue (1.0));
   m_interferenceData = CreateObject<LteInterference> ();
   m_interferenceCtrl = CreateObject<LteInterference> ();
+  m_interferencePrach = CreateObject<LteInterferenceMultipleRx> ();
 
   for (uint8_t i = 0; i < 7; i++)
     {
@@ -164,6 +176,8 @@ void LteSpectrumPhy::DoDispose ()
   m_interferenceData = 0;
   m_interferenceCtrl->Dispose ();
   m_interferenceCtrl = 0;
+  m_interferencePrach-> Dispose ();
+  m_interferencePrach = 0;
   m_ltePhyRxDataEndErrorCallback = MakeNullCallback< void > ();
   m_ltePhyRxDataEndOkCallback    = MakeNullCallback< void, Ptr<Packet> >  ();
   m_ltePhyRxCtrlEndOkCallback = MakeNullCallback< void, std::list<Ptr<LteControlMessage> > > ();
@@ -194,6 +208,9 @@ std::ostream& operator<< (std::ostream& os, LteSpectrumPhy::State s)
     case LteSpectrumPhy::RX_DL_CTRL:
       os << "RX_DL_CTRL";
       break;
+    case LteSpectrumPhy::RX_UL_SRS:
+      os << "RX_UL_SRS";
+      break;
     case LteSpectrumPhy::TX_DATA:
       os << "TX_DATA";
       break;
@@ -202,6 +219,12 @@ std::ostream& operator<< (std::ostream& os, LteSpectrumPhy::State s)
       break;
     case LteSpectrumPhy::TX_UL_SRS:
       os << "TX_UL_SRS";
+      break;
+    case LteSpectrumPhy::TX_RACH:
+      os << "TX_RACH";
+      break;
+    case LteSpectrumPhy::RX_RACH:
+      os << "RX_RACH";
       break;
     default:
       os << "UNKNOWN";
@@ -246,6 +269,11 @@ LteSpectrumPhy::GetTypeId (void)
                     BooleanValue (true),
                     MakeBooleanAccessor (&LteSpectrumPhy::m_ctrlErrorModelEnabled),
                     MakeBooleanChecker ())
+    .AddAttribute ("PRACHErrorModelEnabled",
+                    "Activate/Deactivate the error model of PRACH [by default is active].",
+                    BooleanValue (true),
+                    MakeBooleanAccessor (&LteSpectrumPhy::m_pRachErrorModelEnabled),
+                    MakeBooleanChecker ())
     .AddTraceSource ("DlPhyReception",
                      "DL reception PHY layer statistics.",
                      MakeTraceSourceAccessor (&LteSpectrumPhy::m_dlPhyReception),
@@ -253,6 +281,10 @@ LteSpectrumPhy::GetTypeId (void)
     .AddTraceSource ("UlPhyReception",
                      "DL reception PHY layer statistics.",
                      MakeTraceSourceAccessor (&LteSpectrumPhy::m_ulPhyReception),
+                     "ns3::PhyReceptionStatParameters::TracedCallback")
+    .AddTraceSource ("PrachPhyReception",
+                     "PRACH reception PHY layer statistics.",
+                     MakeTraceSourceAccessor (&LteSpectrumPhy::m_prachPhyReception),
                      "ns3::PhyReceptionStatParameters::TracedCallback")
   ;
   return tid;
@@ -329,9 +361,14 @@ LteSpectrumPhy::SetNoisePowerSpectralDensity (Ptr<const SpectrumValue> noisePsd)
   m_rxSpectrumModel = noisePsd->GetSpectrumModel ();
   m_interferenceData->SetNoisePowerSpectralDensity (noisePsd);
   m_interferenceCtrl->SetNoisePowerSpectralDensity (noisePsd);
+  m_interferencePrach->SetNoisePowerSpectralDensity (noisePsd);
 }
 
-  
+void LteSpectrumPhy::SetRxSpectrumModel (Ptr<const SpectrumModel> rxSpectrumModel)
+{
+	m_rxSpectrumModel=rxSpectrumModel;
+}
+
 void 
 LteSpectrumPhy::Reset ()
 {
@@ -344,12 +381,15 @@ LteSpectrumPhy::Reset ()
   m_endRxDataEvent.Cancel ();
   m_endRxDlCtrlEvent.Cancel ();
   m_endRxUlSrsEvent.Cancel ();
+  m_endRxPrachEvent.Cancel ();
   m_rxControlMessageList.clear ();
   m_expectedTbs.clear ();
   m_txControlMessageList.clear ();
+  m_rxpRachMessageList.clear ();
   m_rxPacketBurstList.clear ();
   m_txPacketBurst = 0;
   m_rxSpectrumModel = 0;
+  m_numPrachAccess = -1;
 }
 
 
@@ -376,10 +416,25 @@ LteSpectrumPhy::SetLtePhyRxCtrlEndOkCallback (LtePhyRxCtrlEndOkCallback c)
 }
 
 void
+LteSpectrumPhy::SetLtePhyRxPrachEndOkCallback (LtePhyRxPrachEndOkCallback c)
+{
+  NS_LOG_FUNCTION (this);
+  m_ltePhyRxPrachEndOkCallback = c;
+}
+
+void
 LteSpectrumPhy::SetLtePhyRxCtrlEndErrorCallback (LtePhyRxCtrlEndErrorCallback c)
 {
   NS_LOG_FUNCTION (this);
   m_ltePhyRxCtrlEndErrorCallback = c;
+}
+
+
+void
+LteSpectrumPhy::SetLtePhyRxPrachEndErrorCallback (LtePhyRxPrachEndErrorCallback c)
+{
+  NS_LOG_FUNCTION (this);
+  m_ltePhyRxPrachEndErrorCallback = c;
 }
 
 
@@ -438,7 +493,17 @@ LteSpectrumPhy::SetHarqPhyModule (Ptr<LteHarqPhy> harq)
 {
   m_harqPhyModule = harq;
 }
+Ptr<LteHarqPhy> LteSpectrumPhy::GetHarqPhyModule ()
+{
+	return m_harqPhyModule;
+}
 
+bool
+LteSpectrumPhy::StartTxMsg3Frame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration)
+{
+  m_msg3 = true;
+  return StartTxDataFrame(pb, ctrlMsgList, duration);
+}
 
 
 
@@ -453,12 +518,14 @@ LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
   switch (m_state)
     {
     case RX_DATA:
+    case RX_RACH:
     case RX_DL_CTRL:
     case RX_UL_SRS:
       NS_FATAL_ERROR ("cannot TX while RX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
       break;
 
     case TX_DATA:
+    case TX_RACH:
     case TX_DL_CTRL:      
     case TX_UL_SRS:
       NS_FATAL_ERROR ("cannot TX while already TX: the MAC should avoid this");
@@ -488,8 +555,10 @@ LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
       txParams->packetBurst = pb;
       txParams->ctrlMsgList = ctrlMsgList;
       txParams->cellId = m_cellId;
+      txParams->isMsg3 = m_msg3;
       m_channel->StartTx (txParams);
       m_endTxEvent = Simulator::Schedule (duration, &LteSpectrumPhy::EndTxData, this);
+      m_msg3 = false;
     }
     return false;
     break;
@@ -500,6 +569,69 @@ LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
       break;
   }
 }
+
+bool 
+LteSpectrumPhy::StartTxPrachFrame (std::list<Ptr<LteControlMessage> > prachMsgList, Time duration)
+{
+  NS_LOG_LOGIC (this << " state: " << m_state);
+  
+  switch (m_state)
+    {
+    case RX_DATA:
+    case RX_RACH:
+    case RX_DL_CTRL:
+    case RX_UL_SRS:
+      NS_FATAL_ERROR ("cannot TX while RX: according to FDD channel acces, the physical layer for transmission cannot be used for reception");
+      break;
+
+    case TX_DATA:
+    case TX_RACH:
+    case TX_DL_CTRL:      
+    case TX_UL_SRS:
+      NS_FATAL_ERROR ("cannot TX while already TX: the MAC should avoid this");
+      break;
+      
+    case IDLE:
+    {
+      /*
+      m_txPsd must be setted by the device, according to
+      (i) the available subchannel for transmission
+      (ii) the power transmission
+      */
+      NS_ASSERT (m_txPsd);
+      
+      // we need to convey some PHY meta information to the receiver
+      // to be used for simulation purposes (e.g., the CellId). This
+      // is done by setting the cellId parameter of
+      // LteSpectrumSignalParametersPrachFrame
+      ChangeState (TX_RACH);
+      NS_ASSERT (m_channel);
+
+      // update PrachMsg with the information about the UE position
+      // this will be updated with the difference with eNB position at reception
+      Ptr<RachPreambleLteControlMessage> prachMsg = DynamicCast<RachPreambleLteControlMessage> (prachMsgList.front()); // there is just one preamble!
+      prachMsg->SetPosition(m_mobility->GetPosition());
+
+      Ptr<LteSpectrumSignalParametersPrachFrame> txParams = Create<LteSpectrumSignalParametersPrachFrame> ();
+      txParams->duration = DL_CTRL_DURATION;
+      txParams->txPhy = GetObject<SpectrumPhy> ();
+      txParams->txAntenna = m_antenna;
+      txParams->psd = m_txPsd;
+      txParams->cellId = m_cellId;
+      txParams->prachMsgList = prachMsgList; // to carry RACH preamble
+      m_channel->StartTx (txParams);
+      m_endTxEvent = Simulator::Schedule (duration, &LteSpectrumPhy::EndTxPrach, this);
+    }
+    return false;
+    break;
+    
+    default:
+      NS_FATAL_ERROR ("unknown state");
+      return true;
+      break;
+    } //switch
+}
+
 
 bool
 LteSpectrumPhy::StartTxDlCtrlFrame (std::list<Ptr<LteControlMessage> > ctrlMsgList, bool pss)
@@ -512,12 +644,14 @@ LteSpectrumPhy::StartTxDlCtrlFrame (std::list<Ptr<LteControlMessage> > ctrlMsgLi
     case RX_DATA:
     case RX_DL_CTRL:
     case RX_UL_SRS:
+    case RX_RACH:
       NS_FATAL_ERROR ("cannot TX while RX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
       break;
       
     case TX_DATA:
     case TX_DL_CTRL:
     case TX_UL_SRS:
+    case TX_RACH:
       NS_FATAL_ERROR ("cannot TX while already TX: the MAC should avoid this");
       break;
       
@@ -570,12 +704,14 @@ LteSpectrumPhy::StartTxUlSrsFrame ()
     case RX_DATA:
     case RX_DL_CTRL:
     case RX_UL_SRS:
+    case RX_RACH:
       NS_FATAL_ERROR ("cannot TX while RX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
       break;
       
     case TX_DL_CTRL:
     case TX_DATA:
     case TX_UL_SRS:
+    case TX_RACH:
       NS_FATAL_ERROR ("cannot TX while already TX: the MAC should avoid this");
       break;
       
@@ -629,6 +765,15 @@ LteSpectrumPhy::EndTxData ()
 }
 
 void
+LteSpectrumPhy::EndTxPrach ()
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_ASSERT (m_state == TX_RACH);
+  ChangeState (IDLE);
+}
+
+void
 LteSpectrumPhy::EndTxDlCtrl ()
 {
   NS_LOG_FUNCTION (this);
@@ -667,6 +812,7 @@ LteSpectrumPhy::StartRx (Ptr<SpectrumSignalParameters> spectrumRxParams)
   Ptr<LteSpectrumSignalParametersDataFrame> lteDataRxParams = DynamicCast<LteSpectrumSignalParametersDataFrame> (spectrumRxParams);
   Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDlCtrlRxParams = DynamicCast<LteSpectrumSignalParametersDlCtrlFrame> (spectrumRxParams);
   Ptr<LteSpectrumSignalParametersUlSrsFrame> lteUlSrsRxParams = DynamicCast<LteSpectrumSignalParametersUlSrsFrame> (spectrumRxParams);
+  Ptr<LteSpectrumSignalParametersPrachFrame> ltePrachRxParams = DynamicCast<LteSpectrumSignalParametersPrachFrame> (spectrumRxParams);
   if (lteDataRxParams != 0)
     {
       m_interferenceData->AddSignal (rxPsd, duration);
@@ -682,12 +828,19 @@ LteSpectrumPhy::StartRx (Ptr<SpectrumSignalParameters> spectrumRxParams)
       m_interferenceCtrl->AddSignal (rxPsd, duration);
       StartRxUlSrs (lteUlSrsRxParams);
     }
+  else if (ltePrachRxParams != 0)
+    {
+      m_interferencePrach->AddSignal (rxPsd, duration);
+      StartRxPrach (ltePrachRxParams);
+    }
   else
     {
       // other type of signal (could be 3G, GSM, whatever) -> interference
       m_interferenceData->AddSignal (rxPsd, duration);
       m_interferenceCtrl->AddSignal (rxPsd, duration);
-    }    
+      m_interferencePrach->AddSignal (rxPsd, duration);
+    }   
+
 }
 
 void
@@ -699,10 +852,14 @@ LteSpectrumPhy::StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params)
       case TX_DATA:
       case TX_DL_CTRL:
       case TX_UL_SRS:
+      case TX_RACH:
         NS_FATAL_ERROR ("cannot RX while TX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
         break;
       case RX_DL_CTRL:
-        NS_FATAL_ERROR ("cannot RX Data while receiving control");
+        NS_FATAL_ERROR (m_state << "cannot RX Data while receiving control");
+        break;
+      case RX_RACH: // the scheduler avoids allocating resources to PUSCH when there is a PRACH subframe
+        NS_FATAL_ERROR (m_state << "cannot RX Data while receiving RACH preamble");
         break;
       case IDLE:
       case RX_DATA:
@@ -741,7 +898,14 @@ LteSpectrumPhy::StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params)
               if (params->packetBurst)
                 {
                   m_rxPacketBurstList.push_back (params->packetBurst);
-                  m_interferenceData->StartRx (params->psd);
+                  if(params->isMsg3)
+                    {
+                      m_interferenceData->StartRxMsg3 (params->psd);
+                    }
+                  else
+                    {
+                      m_interferenceData->StartRx (params->psd);
+                    }
                   
                   m_phyRxStartTrace (params->packetBurst);
                 }
@@ -766,7 +930,97 @@ LteSpectrumPhy::StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params)
    NS_LOG_LOGIC (this << " state: " << m_state);
 }
 
+void 
+LteSpectrumPhy::StartRxPrach (Ptr<LteSpectrumSignalParametersPrachFrame> ltePrachRxParams)
+{
+  // since prach is used to tx from UE to eNB, this method is called only by the LteSpectrum
+  // object of the eNB
+  NS_LOG_FUNCTION (this);
 
+  // To check if we're synchronized to this signal, we check
+  // for the CellId which is reported in the
+  // LteSpectrumSignalParametersDlCtrlFrame
+  uint16_t cellId;        
+  NS_ASSERT (ltePrachRxParams != 0);
+  cellId = ltePrachRxParams->cellId;
+
+  switch (m_state) 
+    {
+    case TX_DATA:
+    case TX_DL_CTRL:
+    case TX_UL_SRS:
+    case RX_DATA:
+    case RX_UL_SRS:
+    case RX_DL_CTRL:
+    case TX_RACH:
+      NS_FATAL_ERROR ("unexpected event in state " << m_state);
+      break;
+
+    case RX_RACH: // if this is called it means that other UEs have sent 
+      // their prach transmission in the same subframe
+      // In real LTE systems they can be distinguished by looking at the ZC sequence
+      // since they should be orthogonal
+
+      if (cellId == m_cellId)
+        {
+          NS_LOG_LOGIC (this << " synchronized with this signal (cellId=" << cellId << ")");
+          // sanity check: if there are multiple RX events, they
+          // should occur at the same time and have the same
+          // duration, otherwise the interference calculation
+          // won't be correct
+          NS_ASSERT ((m_firstRxStart == Simulator::Now ()) 
+          && (m_firstRxDuration == ltePrachRxParams->duration));
+          // m_rxpRachMessageList cannot be empty since there is already a rx_rach event
+
+          Time duration = ltePrachRxParams->duration;
+          NS_LOG_LOGIC (this << " scheduling EndRx number " << m_numPrachAccess << " with delay " << duration);          
+          NS_ASSERT_MSG(ltePrachRxParams->prachMsgList.size() == 1, "It is possible to send only one RACH preamble per message");
+          m_numPrachAccess += 1;
+          m_rxpRachMessageList[m_numPrachAccess] = (ltePrachRxParams->prachMsgList).front();
+          m_interferencePrach->StartRx (ltePrachRxParams->psd, m_numPrachAccess);            
+
+          Simulator::Schedule (ltePrachRxParams->duration, &LteSpectrumPhy::EndRxPrach, this, m_numPrachAccess);
+
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " not synchronizing with this signal (cellId=" 
+                        << cellId  << ", m_cellId=" << m_cellId << ")");          
+        }  
+      break;
+      
+
+    case IDLE:
+      if (cellId  == m_cellId)
+        {
+          NS_LOG_LOGIC (this << " synchronized with this signal (cellId=" << cellId << ")");
+          NS_ASSERT (m_rxpRachMessageList.empty ());
+          m_firstRxStart = Simulator::Now ();
+          m_firstRxDuration = ltePrachRxParams->duration;
+          NS_LOG_LOGIC (this << " scheduling EndRx with delay " << m_firstRxDuration);
+          
+          // store the DCIs
+          m_numPrachAccess = 0;
+          NS_ASSERT_MSG(ltePrachRxParams->prachMsgList.size() == 1, "It is possible to send only one RACH preamble per message");
+          m_rxpRachMessageList[m_numPrachAccess] = (ltePrachRxParams->prachMsgList).front();
+          m_endRxPrachEvent = Simulator::Schedule (ltePrachRxParams->duration, &LteSpectrumPhy::EndRxPrach, this, m_numPrachAccess);
+          ChangeState (RX_RACH);
+          m_interferencePrach->StartRx (ltePrachRxParams->psd, m_numPrachAccess);            
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " not synchronizing with this signal (cellId=" 
+                        << cellId  << ", m_cellId=" << m_cellId << ")");          
+        }
+      break;
+      
+    default:
+      NS_FATAL_ERROR ("unknown state");
+      break;
+    } // switch
+  
+  NS_LOG_LOGIC (this << " state: " << m_state);
+}
 
 void
 LteSpectrumPhy::StartRxDlCtrl (Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDlCtrlRxParams)
@@ -787,6 +1041,8 @@ LteSpectrumPhy::StartRxDlCtrl (Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDl
     case TX_UL_SRS:
     case RX_DATA:
     case RX_UL_SRS:
+    case RX_RACH:
+    case TX_RACH:
       NS_FATAL_ERROR ("unexpected event in state " << m_state);
       break;
 
@@ -861,11 +1117,13 @@ LteSpectrumPhy::StartRxUlSrs (Ptr<LteSpectrumSignalParametersUlSrsFrame> lteUlSr
     case TX_DATA:
     case TX_DL_CTRL:
     case TX_UL_SRS:
+    case TX_RACH:
       NS_FATAL_ERROR ("cannot RX while TX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
       break;
 
     case RX_DATA:
     case RX_DL_CTRL:
+    case RX_RACH:
       NS_FATAL_ERROR ("cannot RX SRS while receiving something else");
       break;
 
@@ -930,6 +1188,13 @@ LteSpectrumPhy::UpdateSinrPerceived (const SpectrumValue& sinr)
   m_sinrPerceived = sinr;
 }
 
+void
+LteSpectrumPhy::UpdateSinrPerceivedMultiple (const SpectrumValue& sinr, uint32_t signalId)
+{
+  NS_LOG_FUNCTION (this << sinr);
+  m_sinrPerceived = sinr;
+}
+
 
 void
 LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t layer, uint8_t harqId,uint8_t rv,  bool downlink)
@@ -950,6 +1215,25 @@ LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8
   m_expectedTbs.insert (std::pair<TbId_t, tbInfo_t> (tbId,tbInfo));
 }
 
+void
+LteSpectrumPhy::RemoveExpectedTb (uint16_t  rnti)
+{
+	NS_LOG_FUNCTION (this);
+	 TbId_t tbId;
+	 tbId.m_rnti = rnti;
+	 for(uint8_t i=0; i<2; i++)
+	 {
+		 tbId.m_layer = 0;
+		 expectedTbs_t::iterator it;
+		it = m_expectedTbs.find (tbId);
+		if (it != m_expectedTbs.end ())
+		{
+		  // migth be a TB of an unreceived packet (due to high progpalosses)
+		  m_expectedTbs.erase (it);
+		}
+	 }
+
+}
 
 void
 LteSpectrumPhy::EndRxData ()
@@ -958,195 +1242,273 @@ LteSpectrumPhy::EndRxData ()
   NS_LOG_LOGIC (this << " state: " << m_state);
 
   NS_ASSERT (m_state == RX_DATA);
-
+  // bool msg3_collision = false;
   // this will trigger CQI calculation and Error Model evaluation
   // as a side effect, the error model should update the error status of all TBs
-  m_interferenceData->EndRx ();
-  NS_LOG_DEBUG (this << " No. of burts " << m_rxPacketBurstList.size ());
-  NS_LOG_DEBUG (this << " Expected TBs " << m_expectedTbs.size ());
-  expectedTbs_t::iterator itTb = m_expectedTbs.begin ();
-  
-  // apply transmission mode gain
-  NS_LOG_DEBUG (this << " txMode " << (uint16_t)m_transmissionMode << " gain " << m_txModeGain.at (m_transmissionMode));
-  NS_ASSERT (m_transmissionMode < m_txModeGain.size ());
-  m_sinrPerceived *= m_txModeGain.at (m_transmissionMode);
-  
-  while (itTb!=m_expectedTbs.end ())
+  bool msg3corrupt = false;
+  if (!m_interferenceData->EndRx ())
     {
-      if ((m_dataErrorModelEnabled)&&(m_rxPacketBurstList.size ()>0)) // avoid to check for errors when there is no actual data transmitted
+      NS_LOG_INFO("Msg3 collision at time " << Simulator::Now().GetSeconds());
+      msg3corrupt = true;
+    }
+  if(true)
+    {
+      NS_LOG_INFO (this << " No. of burts " << m_rxPacketBurstList.size () << " time " << Simulator::Now().GetSeconds());
+      NS_LOG_INFO (this << " Expected TBs " << m_expectedTbs.size ());
+      expectedTbs_t::iterator itTb = m_expectedTbs.begin ();
+      
+      // apply transmission mode gain
+      NS_LOG_DEBUG (this << " txMode " << (uint16_t)m_transmissionMode << " gain " << m_txModeGain.at (m_transmissionMode));
+      NS_ASSERT (m_transmissionMode < m_txModeGain.size ());
+      m_sinrPerceived *= m_txModeGain.at (m_transmissionMode);
+      while (itTb!=m_expectedTbs.end ())
         {
-          // retrieve HARQ info
-          HarqProcessInfoList_t harqInfoList;
-          if ((*itTb).second.ndi == 0)
+          if ((m_dataErrorModelEnabled)&&(m_rxPacketBurstList.size ()>0)) // avoid to check for errors when there is no actual data transmitted
             {
-              // TB retxed: retrieve HARQ history
-              uint16_t ulHarqId = 0;
-              if ((*itTb).second.downlink)
+              // retrieve HARQ info
+              HarqProcessInfoList_t harqInfoList;
+              if ((*itTb).second.ndi == 0)
                 {
-                  harqInfoList = m_harqPhyModule->GetHarqProcessInfoDl ((*itTb).second.harqProcessId, (*itTb).first.m_layer);
+                  // TB retxed: retrieve HARQ history
+                  uint16_t ulHarqId = 0;
+                  if ((*itTb).second.downlink)
+                    {
+                      harqInfoList = m_harqPhyModule->GetHarqProcessInfoDl ((*itTb).second.harqProcessId, (*itTb).first.m_layer);
+                    }
+                  else
+                    {
+                      harqInfoList = m_harqPhyModule->GetHarqProcessInfoUl ((*itTb).first.m_rnti, ulHarqId);
+                    }
+                }
+              TbStats_t tbStats = LteMiErrorModel::GetTbDecodificationStats (m_sinrPerceived, (*itTb).second.rbBitmap, (*itTb).second.size, (*itTb).second.mcs, harqInfoList);
+              (*itTb).second.mi = tbStats.mi;
+
+              if(msg3corrupt)
+                {
+                  (*itTb).second.corrupt = msg3corrupt;
+                  NS_LOG_INFO("msg 3 corrupted");
                 }
               else
                 {
-                  harqInfoList = m_harqPhyModule->GetHarqProcessInfoUl ((*itTb).first.m_rnti, ulHarqId);
+                  (*itTb).second.corrupt =  m_random->GetValue () > tbStats.tbler ? false : true;
                 }
-            }
-          TbStats_t tbStats = LteMiErrorModel::GetTbDecodificationStats (m_sinrPerceived, (*itTb).second.rbBitmap, (*itTb).second.size, (*itTb).second.mcs, harqInfoList);
-          (*itTb).second.mi = tbStats.mi;
-          (*itTb).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
-          NS_LOG_DEBUG (this << "RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " layer " << (uint16_t)(*itTb).first.m_layer << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt);
-          // fire traces on DL/UL reception PHY stats
-          PhyReceptionStatParameters params;
-          params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
-          params.m_cellId = m_cellId;
-          params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
-          params.m_rnti = (*itTb).first.m_rnti;
-          params.m_txMode = m_transmissionMode;
-          params.m_layer =  (*itTb).first.m_layer;
-          params.m_mcs = (*itTb).second.mcs;
-          params.m_size = (*itTb).second.size;
-          params.m_rv = (*itTb).second.rv;
-          params.m_ndi = (*itTb).second.ndi;
-          params.m_correctness = (uint8_t)!(*itTb).second.corrupt;
-          params.m_ccId = m_componentCarrierId;
-          if ((*itTb).second.downlink)
-            {
-              // DL
-              m_dlPhyReception (params);
-            }
-          else
-            {
-              // UL
-              params.m_rv = harqInfoList.size ();
-              m_ulPhyReception (params);
-            }
-       }
-      
-      itTb++;
-    }
-    std::map <uint16_t, DlInfoListElement_s> harqDlInfoMap;
-    for (std::list<Ptr<PacketBurst> >::const_iterator i = m_rxPacketBurstList.begin (); 
-    i != m_rxPacketBurstList.end (); ++i)
-      {
-        for (std::list<Ptr<Packet> >::const_iterator j = (*i)->Begin (); j != (*i)->End (); ++j)
-          {
-            // retrieve TB info of this packet 
-            LteRadioBearerTag tag;
-            (*j)->PeekPacketTag (tag);
-            TbId_t tbId;
-            tbId.m_rnti = tag.GetRnti ();
-            tbId.m_layer = tag.GetLayer ();
-            itTb = m_expectedTbs.find (tbId);
-            NS_LOG_INFO (this << " Packet of " << tbId.m_rnti << " layer " <<  (uint16_t) tag.GetLayer ());
-            if (itTb!=m_expectedTbs.end ())
-              {
-                if (!(*itTb).second.corrupt)
-                  {
-                    m_phyRxEndOkTrace (*j);
-                
-                    if (!m_ltePhyRxDataEndOkCallback.IsNull ())
-                      {
-                        m_ltePhyRxDataEndOkCallback (*j);
-                      }
-                  }
-                else
-                  {
-                    // TB received with errors
-                    m_phyRxEndErrorTrace (*j);
-                  }
 
-                // send HARQ feedback (if not already done for this TB)
-                if (!(*itTb).second.harqFeedbackSent)
+              NS_LOG_INFO (this << " RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " layer " << (uint16_t)(*itTb).first.m_layer << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt);
+              // fire traces on DL/UL reception PHY stats
+              PhyReceptionStatParameters params;
+              params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
+              params.m_cellId = m_cellId;
+              params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
+              params.m_rnti = (*itTb).first.m_rnti;
+              params.m_txMode = m_transmissionMode;
+              params.m_layer =  (*itTb).first.m_layer;
+              params.m_mcs = (*itTb).second.mcs;
+              params.m_size = (*itTb).second.size;
+              params.m_rv = (*itTb).second.rv;
+              params.m_ndi = (*itTb).second.ndi;
+              params.m_correctness = (uint8_t)!(*itTb).second.corrupt;
+              if ((*itTb).second.downlink)
+                {
+                  // DL
+                  m_dlPhyReception (params);
+                }
+              else
+                {
+                  // UL
+                  params.m_rv = harqInfoList.size ();
+                  m_ulPhyReception (params);
+                }
+           }
+          
+          itTb++;
+        }
+        std::map <uint16_t, DlInfoListElement_s> harqDlInfoMap;
+        for (std::list<Ptr<PacketBurst> >::const_iterator i = m_rxPacketBurstList.begin (); 
+        i != m_rxPacketBurstList.end (); ++i)
+          {
+            for (std::list<Ptr<Packet> >::const_iterator j = (*i)->Begin (); j != (*i)->End (); ++j)
+              {
+                // retrieve TB info of this packet 
+                LteRadioBearerTag tag;
+                (*j)->PeekPacketTag (tag);
+                TbId_t tbId;
+                tbId.m_rnti = tag.GetRnti ();
+                tbId.m_layer = tag.GetLayer ();
+                itTb = m_expectedTbs.find (tbId);
+                NS_LOG_INFO (this << " Packet of " << tbId.m_rnti << " layer " <<  (uint16_t) tag.GetLayer ());
+                if (itTb!=m_expectedTbs.end ())
                   {
-                    (*itTb).second.harqFeedbackSent = true;
-                    if (!(*itTb).second.downlink)
+                    if (!(*itTb).second.corrupt)
                       {
-                        UlInfoListElement_s harqUlInfo;
-                        harqUlInfo.m_rnti = tbId.m_rnti;
-                        harqUlInfo.m_tpc = 0;
-                        if ((*itTb).second.corrupt)
+                        m_phyRxEndOkTrace (*j);
+                    
+                        if (!m_ltePhyRxDataEndOkCallback.IsNull ())
                           {
-                            harqUlInfo.m_receptionStatus = UlInfoListElement_s::NotOk;
-                            NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " send UL-HARQ-NACK");
-                            m_harqPhyModule->UpdateUlHarqProcessStatus (tbId.m_rnti, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                            m_ltePhyRxDataEndOkCallback (*j);
                           }
-                        else
-                          {
-                            harqUlInfo.m_receptionStatus = UlInfoListElement_s::Ok;
-                            NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " send UL-HARQ-ACK");
-                            m_harqPhyModule->ResetUlHarqProcessStatus (tbId.m_rnti, (*itTb).second.harqProcessId);
-                          }
-                          if (!m_ltePhyUlHarqFeedbackCallback.IsNull ())
-                            {
-                              m_ltePhyUlHarqFeedbackCallback (harqUlInfo);
-                            }
                       }
                     else
                       {
-                        std::map <uint16_t, DlInfoListElement_s>::iterator itHarq = harqDlInfoMap.find (tbId.m_rnti);
-                        if (itHarq==harqDlInfoMap.end ())
+                        // TB received with errors
+                        m_phyRxEndErrorTrace (*j);
+                      }
+
+                    // send HARQ feedback (if not already done for this TB)
+                    if (!(*itTb).second.harqFeedbackSent)
+                      {
+                        (*itTb).second.harqFeedbackSent = true;
+                        if (!(*itTb).second.downlink)
                           {
-                            DlInfoListElement_s harqDlInfo;
-                            harqDlInfo.m_harqStatus.resize (m_layersNum, DlInfoListElement_s::ACK);
-                            harqDlInfo.m_rnti = tbId.m_rnti;
-                            harqDlInfo.m_harqProcessId = (*itTb).second.harqProcessId;
+                            UlInfoListElement_s harqUlInfo;
+                            harqUlInfo.m_rnti = tbId.m_rnti;
+                            harqUlInfo.m_tpc = 0;
                             if ((*itTb).second.corrupt)
                               {
-                                harqDlInfo.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::NACK;
-                                NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " send DL-HARQ-NACK");
-                                m_harqPhyModule->UpdateDlHarqProcessStatus ((*itTb).second.harqProcessId, tbId.m_layer, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                                harqUlInfo.m_receptionStatus = UlInfoListElement_s::NotOk;
+                                NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " send UL-HARQ-NACK");
+                                m_harqPhyModule->UpdateUlHarqProcessStatus (tbId.m_rnti, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
                               }
                             else
                               {
-
-                                harqDlInfo.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::ACK;
-                                NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " size " << (*itTb).second.size << " send DL-HARQ-ACK");
-                                m_harqPhyModule->ResetDlHarqProcessStatus ((*itTb).second.harqProcessId);
+                                harqUlInfo.m_receptionStatus = UlInfoListElement_s::Ok;
+                                NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " send UL-HARQ-ACK");
+                                m_harqPhyModule->ResetUlHarqProcessStatus (tbId.m_rnti, (*itTb).second.harqProcessId);
                               }
-                            harqDlInfoMap.insert (std::pair <uint16_t, DlInfoListElement_s> (tbId.m_rnti, harqDlInfo));
+                              if (!m_ltePhyUlHarqFeedbackCallback.IsNull ())
+                                {
+                                  m_ltePhyUlHarqFeedbackCallback (harqUlInfo);
+                                }
                           }
                         else
-                        {
-                          if ((*itTb).second.corrupt)
+                          {
+                            std::map <uint16_t, DlInfoListElement_s>::iterator itHarq = harqDlInfoMap.find (tbId.m_rnti);
+                            if (itHarq==harqDlInfoMap.end ())
+                              {
+                                DlInfoListElement_s harqDlInfo;
+                                harqDlInfo.m_harqStatus.resize (m_layersNum, DlInfoListElement_s::NACK);
+                                harqDlInfo.m_rnti = tbId.m_rnti;
+                                harqDlInfo.m_harqProcessId = (*itTb).second.harqProcessId;
+                                if ((*itTb).second.corrupt)
+                                  {
+                                    harqDlInfo.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::NACK;
+                                    NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " send DL-HARQ-NACK");
+                                    m_harqPhyModule->UpdateDlHarqProcessStatus ((*itTb).second.harqProcessId, tbId.m_layer, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                                  }
+                                else
+                                  {
+
+                                    harqDlInfo.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::ACK;
+                                    NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " size " << (*itTb).second.size << " send DL-HARQ-ACK");
+                                    m_harqPhyModule->ResetDlHarqProcessStatus ((*itTb).second.harqProcessId);
+                                  }
+                                harqDlInfoMap.insert (std::pair <uint16_t, DlInfoListElement_s> (tbId.m_rnti, harqDlInfo));
+                              }
+                            else
                             {
-                              (*itHarq).second.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::NACK;
-                              NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " size " << (*itHarq).second.m_harqStatus.size () << " send DL-HARQ-NACK");
-                              m_harqPhyModule->UpdateDlHarqProcessStatus ((*itTb).second.harqProcessId, tbId.m_layer, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                              if ((*itTb).second.corrupt)
+                                {
+                                  (*itHarq).second.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::NACK;
+                                  NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " <<(uint16_t)tbId.m_layer << " size " << (*itHarq).second.m_harqStatus.size () << " send DL-HARQ-NACK");
+                                  m_harqPhyModule->UpdateDlHarqProcessStatus ((*itTb).second.harqProcessId, tbId.m_layer, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                                }
+                              else
+                                {
+                                  NS_ASSERT_MSG (tbId.m_layer < (*itHarq).second.m_harqStatus.size (), " layer " << (uint16_t)tbId.m_layer);
+                                  (*itHarq).second.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::ACK;
+                                  NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " << (uint16_t)tbId.m_layer << " size " << (*itHarq).second.m_harqStatus.size () << " send DL-HARQ-ACK");
+                                  m_harqPhyModule->ResetDlHarqProcessStatus ((*itTb).second.harqProcessId);
+                                }
                             }
-                          else
-                            {
-                              NS_ASSERT_MSG (tbId.m_layer < (*itHarq).second.m_harqStatus.size (), " layer " << (uint16_t)tbId.m_layer);
-                              (*itHarq).second.m_harqStatus.at (tbId.m_layer) = DlInfoListElement_s::ACK;
-                              NS_LOG_DEBUG (this << " RNTI " << tbId.m_rnti << " harqId " << (uint16_t)(*itTb).second.harqProcessId << " layer " << (uint16_t)tbId.m_layer << " size " << (*itHarq).second.m_harqStatus.size () << " send DL-HARQ-ACK");
-                              m_harqPhyModule->ResetDlHarqProcessStatus ((*itTb).second.harqProcessId);
-                            }
-                        }
-                      } // end if ((*itTb).second.downlink) HARQ
-                  } // end if (!(*itTb).second.harqFeedbackSent)
+                          } // end if ((*itTb).second.downlink) HARQ
+                      } // end if (!(*itTb).second.harqFeedbackSent)
+                  }
               }
           }
-      }
 
-  // send DL HARQ feedback to LtePhy
-  std::map <uint16_t, DlInfoListElement_s>::iterator itHarq;
-  for (itHarq = harqDlInfoMap.begin (); itHarq != harqDlInfoMap.end (); itHarq++)
-    {
-      if (!m_ltePhyDlHarqFeedbackCallback.IsNull ())
+      // send DL HARQ feedback to LtePhy
+      std::map <uint16_t, DlInfoListElement_s>::iterator itHarq;
+      for (itHarq = harqDlInfoMap.begin (); itHarq != harqDlInfoMap.end (); itHarq++)
         {
-          m_ltePhyDlHarqFeedbackCallback ((*itHarq).second);
+          if (!m_ltePhyDlHarqFeedbackCallback.IsNull ())
+            {
+              m_ltePhyDlHarqFeedbackCallback ((*itHarq).second);
+            }
         }
-    }
-  // forward control messages of this frame to LtePhy
-  if (!m_rxControlMessageList.empty ())
-    {
-      if (!m_ltePhyRxCtrlEndOkCallback.IsNull ())
+      // forward control messages of this frame to LtePhy
+      if (!m_rxControlMessageList.empty ())
         {
-          m_ltePhyRxCtrlEndOkCallback (m_rxControlMessageList);
+          if (!m_ltePhyRxCtrlEndOkCallback.IsNull ())
+            {
+              m_ltePhyRxCtrlEndOkCallback (m_rxControlMessageList);
+            }
         }
     }
   ChangeState (IDLE);
   m_rxPacketBurstList.clear ();
   m_rxControlMessageList.clear ();
   m_expectedTbs.clear ();
+}
+
+void 
+LteSpectrumPhy::EndRxPrach (uint32_t numPrachAccess)
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " state: " << m_state); 
+
+  NS_ASSERT (m_state == RX_RACH || numPrachAccess > 1);
+
+  // this will trigger CQI calculation and Error Model evaluation
+  // note that for prach channel only snr is evaluated
+  m_interferencePrach->EndRx (numPrachAccess);
+
+  bool error = false;
+  if (m_pRachErrorModelEnabled)
+    {
+      double  errorRate = LteMiErrorModel::GetPrachError (m_sinrPerceived);
+      error = m_random->GetValue () > errorRate ? false : true;
+      NS_LOG_INFO (this << " PRACH Decodification, errorRate " << errorRate << " error " << error);
+    }
+
+  std::list< Ptr<LteControlMessage> > receivedList;
+  receivedList.push_front( (m_rxpRachMessageList.find(numPrachAccess))->second );
+
+  if (!error)
+    {
+      if (!m_ltePhyRxPrachEndOkCallback.IsNull ()) 
+        {
+          // get a pointer to the recv prach msg
+          Ptr<RachPreambleLteControlMessage> msg = DynamicCast<RachPreambleLteControlMessage> (receivedList.front());
+          Vector posDiff = SubtractVectors(msg->GetPosition(), m_mobility->GetPosition());
+          msg->SetPosition(posDiff);
+          NS_LOG_INFO (this << " PRACH Rxed OK");
+          m_ltePhyRxPrachEndOkCallback (receivedList);
+        }
+    }
+  else
+    {
+      if (!m_ltePhyRxPrachEndErrorCallback.IsNull ())
+        {
+          NS_LOG_INFO (this << " PRACH Error");
+          m_ltePhyRxPrachEndErrorCallback (receivedList);
+        }
+    }
+  // remove the message just sent from the list
+  m_rxpRachMessageList.erase(m_rxpRachMessageList.find(numPrachAccess));
+
+  //fire traces for Prach preamble recp
+  PhyReceptionStatParameters params;
+  params.m_timestamp = (DynamicCast<RachPreambleLteControlMessage>(receivedList.front()))->GetStartTime().GetNanoSeconds(); // there is only one Prach preamble
+  params.m_cellId = m_cellId;
+  params.m_imsi =  (DynamicCast<RachPreambleLteControlMessage>(receivedList.front()))->GetImsi(); 
+  params.m_correctness = (uint8_t)!error;
+  m_prachPhyReception (params);
+
+
+  if (m_rxpRachMessageList.empty()) // sent all the RACH messages arrived in the same subframe
+    {
+      ChangeState (IDLE);
+      m_interferencePrach->EndAllRx();
+    }
 }
 
 
@@ -1201,6 +1563,7 @@ LteSpectrumPhy::EndRxDlCtrl ()
 void
 LteSpectrumPhy::EndRxUlSrs ()
 {
+  NS_LOG_FUNCTION (this);
   NS_ASSERT (m_state == RX_UL_SRS);
   ChangeState (IDLE);
   m_interferenceCtrl->EndRx ();
@@ -1226,6 +1589,12 @@ LteSpectrumPhy::AddRsPowerChunkProcessor (Ptr<LteChunkProcessor> p)
 }
 
 void
+LteSpectrumPhy::AddPrachPowerChunkProcessor (Ptr<LteChunkProcessorMultiple> p)
+{
+  m_interferencePrach->AddRsPowerChunkProcessor (p);
+}
+
+void
 LteSpectrumPhy::AddDataPowerChunkProcessor (Ptr<LteChunkProcessor> p)
 {
   m_interferenceData->AddRsPowerChunkProcessor (p);
@@ -1244,6 +1613,12 @@ LteSpectrumPhy::AddInterferenceCtrlChunkProcessor (Ptr<LteChunkProcessor> p)
 }
 
 void
+LteSpectrumPhy::AddInterferencePrachChunkProcessor (Ptr<LteChunkProcessorMultiple> p)
+{
+  m_interferencePrach->AddInterferenceChunkProcessor (p);
+}
+
+void
 LteSpectrumPhy::AddInterferenceDataChunkProcessor (Ptr<LteChunkProcessor> p)
 {
   m_interferenceData->AddInterferenceChunkProcessor (p);
@@ -1253,6 +1628,13 @@ void
 LteSpectrumPhy::AddCtrlSinrChunkProcessor (Ptr<LteChunkProcessor> p)
 {
   m_interferenceCtrl->AddSinrChunkProcessor (p);
+}
+
+
+void
+LteSpectrumPhy::AddPrachSinrChunkProcessor (Ptr<LteChunkProcessorMultiple> p)
+{
+  m_interferencePrach->AddSinrChunkProcessor (p);
 }
 
 void 
@@ -1289,6 +1671,16 @@ LteSpectrumPhy::SetTxModeGain (uint8_t txMode, double gain)
       m_txModeGain.push_back (temp.at (i));
     }
   }
+}
+
+Vector
+LteSpectrumPhy::SubtractVectors(Vector a, Vector b)
+{
+  double xDiff = a.x - b.x;
+  double yDiff = a.y - b.y;
+  double zDiff = a.z - b.z;
+  Vector posDiff (xDiff, yDiff, zDiff);
+  return posDiff;
 }
 
 int64_t

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011, 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>,
  *         Marco Miozzo <mmiozzo@cttc.es>
+ *
+* Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging)
  */
 
 #ifndef LTE_ENB_CPHY_SAP_H
@@ -26,6 +30,8 @@
 #include <ns3/ptr.h>
 
 #include <ns3/lte-rrc-sap.h>
+#include <ns3/lte-control-messages.h>
+
 
 namespace ns3 {
 
@@ -35,7 +41,7 @@ class LteEnbNetDevice;
  * Service Access Point (SAP) offered by the UE PHY to the UE RRC for control purposes
  *
  * This is the PHY SAP Provider, i.e., the part of the SAP that contains
- * the PHY methods called by the MAC
+ * the PHY methods called by the RRC
  */
 class LteEnbCphySapProvider
 {
@@ -116,6 +122,7 @@ public:
    * \return Reference Signal Power for SIB2
    */
   virtual int8_t GetReferenceSignalPower () = 0;
+
 };
 
 
@@ -133,6 +140,16 @@ public:
    * destructor
    */
   virtual ~LteEnbCphySapUser ();
+
+  /**
+   * At each subframe, check if there are any RRC
+   * paging messages to transmit. If yes, transmit the message
+   * 
+   *
+   * \param frameNo the current frame
+   * \param subFrameNo the current sub frame
+   */
+  virtual Ptr<PagingLteControlMessage> CheckForPagingMessages(uint32_t frameNo, uint32_t subFrameNo)=0;
 
 };
 
@@ -277,6 +294,7 @@ public:
   MemberLteEnbCphySapUser (C* owner);
 
   // methods inherited from LteEnbCphySapUser go here
+  virtual Ptr<PagingLteControlMessage> CheckForPagingMessages(uint32_t frameNo, uint32_t subFrameNo);
 
 private:
   MemberLteEnbCphySapUser ();
@@ -294,10 +312,12 @@ MemberLteEnbCphySapUser<C>::MemberLteEnbCphySapUser ()
 {
 }
 
-
-
-
-
+template <class C>
+Ptr<PagingLteControlMessage>
+MemberLteEnbCphySapUser<C>::CheckForPagingMessages (uint32_t frameNo, uint32_t subFrameNo)
+{
+  return m_owner->DoCheckForPagingMessages(frameNo, subFrameNo);
+}
 
 } // namespace ns3
 

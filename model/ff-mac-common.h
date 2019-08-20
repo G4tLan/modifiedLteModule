@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for uplink synchronization)
  */
 
 #ifndef FF_MAC_COMMON_H
@@ -336,7 +339,7 @@ struct MacCeListElement_s
   /// MAC CE type enum
   enum MacCeType_e
   {
-    BSR, PHR, CRNTI
+    BSR, PHR, CRNTI, TAC//timing advance MAC CE
   } m_macCeType; ///< MAC CE type
   struct MacCeValue_u m_macCeValue; ///< MAC CE value
 };
