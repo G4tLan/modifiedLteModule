@@ -24,6 +24,7 @@
 
 #include <ns3/object.h>
 #include <ns3/lte-rrc-sap.h>
+#include <map>
 
 namespace ns3 {
 
@@ -74,6 +75,8 @@ public:
    * \return the object TypeId
    */
   static TypeId GetTypeId ();
+
+  static std::map<uint64_t, bool> ongoingHandovers;
 
   /**
    * \brief Set the "user" part of the Handover Management SAP interface that
