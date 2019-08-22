@@ -75,12 +75,6 @@ public:
    * \return the object TypeId
    */
   static TypeId GetTypeId ();
-  struct cellUePair {
-    uint16_t rnti;
-    uint32_t cellId;
-  };
-
-  static std::map<uint64_t, LteHandoverAlgorithm::cellUePair> ongoingHandovers;
 
   /**
    * \brief Set the "user" part of the Handover Management SAP interface that
