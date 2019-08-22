@@ -294,8 +294,12 @@ LteEnbRrcProtocolIdeal::SetUeRrcSapProvider (uint16_t rnti, LteUeRrcSapProvider*
 {
   std::map<uint16_t, LteUeRrcSapProvider*>::iterator it;
   it = m_enbRrcSapProviderMap.find (rnti);
-  NS_ASSERT_MSG (it != m_enbRrcSapProviderMap.end (), "could not find RNTI = " << rnti);
-  it->second = p;
+  if(it == m_enbRrcSapProviderMap.end ()){
+    // m_enbRrcSapProviderMap[rnti] = p ;
+    // NS_ASSERT_MSG (it != m_enbRrcSapProviderMap.end (), "could not find RNTI = " << rnti << " in cell " << m_cellId);
+  } else {
+    it->second = p;
+  }
 }
 
 void 
