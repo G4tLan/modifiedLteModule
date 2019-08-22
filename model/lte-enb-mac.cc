@@ -1178,9 +1178,27 @@ LteEnbMac::DoReleaseLc (uint16_t rnti)
   //Find user based on rnti and then erase lcid stored against the same
   std::map <uint16_t, std::map<uint8_t, LteMacSapUser*> >::iterator rntiIt = m_rlcAttached.find (rnti);
   // cycle on all the LC and delete one by one
-  for ( std::map <uint8_t, LteMacSapUser*>::iterator lcidIt = rntiIt->second.begin (); lcidIt != rntiIt->second.end (); ++lcidIt)
+    std::map <uint8_t, LteMacSapUser*>::iterator lcidIt = rntiIt->second.begin (); 
+    std::vector<uint8_t> tempIt;
+    for(;lcidIt != rntiIt->second.end();++lcidIt){
+      tempIt.push_back(lcidIt->first);
+    }
+    lcidIt = rntiIt->second.begin ();
+    int count = 0;
+    while (true)
     {
-      this->DoReleaseLc (rnti, lcidIt->first);
+      DoReleaseLc (rnti, lcidIt->first);
+      if(count >= (int)tempIt.size()){
+        break;
+      }
+      if(tempIt.at(count) != lcidIt->first){
+        break;
+      }
+      lcidIt++;
+      count++;
+      if(lcidIt == rntiIt->second.end()){
+        break;
+      }
     }
 }
 
@@ -1191,12 +1209,14 @@ LteEnbMac::DoReleaseLc (uint16_t rnti, uint8_t lcid)
 
   //Find user based on rnti and then erase lcid stored against the same
   std::map <uint16_t, std::map<uint8_t, LteMacSapUser*> >::iterator rntiIt = m_rlcAttached.find (rnti);
-  rntiIt->second.erase (lcid);
+  if(rntiIt != m_rlcAttached.end()){
+    rntiIt->second.erase (lcid);
 
-  struct FfMacCschedSapProvider::CschedLcReleaseReqParameters params;
-  params.m_rnti = rnti;
-  params.m_logicalChannelIdentity.push_back (lcid);
-  m_cschedSapProvider->CschedLcReleaseReq (params);
+    struct FfMacCschedSapProvider::CschedLcReleaseReqParameters params;
+    params.m_rnti = rnti;
+    params.m_logicalChannelIdentity.push_back (lcid);
+    m_cschedSapProvider->CschedLcReleaseReq (params);
+  }
 }
 
 void

@@ -2673,7 +2673,7 @@ LteEnbRrc::DoRecvHandoverRequest (EpcX2SapUser::HandoverRequestParams req)
       m_handoverFailureTrace (GetUeManager (rnti)->GetImsi (), rnti,
                               ComponentCarrierToCellId (GetUeManager (rnti)->GetComponentCarrierId ()),
                               "Handover failure due to max preambles reached");
-      //Also remove the UE context at the target cell
+      //Also remove the UE context at the target cell-
       RemoveUe (rnti);
       return;
     }
