@@ -1922,7 +1922,8 @@ LteEnbRrc::GetUeManager (uint16_t rnti)
   NS_LOG_FUNCTION (this << (uint32_t) rnti);
   NS_ASSERT (0 != rnti);
   std::map<uint16_t, Ptr<UeManager> >::iterator it = m_ueMap.find (rnti);
-  NS_ASSERT_MSG (it != m_ueMap.end (), "UE manager for RNTI " << rnti << " not found");
+  NS_ASSERT_MSG (it != m_ueMap.end (), "UE manager for RNTI " << rnti << " not found in cell " 
+  << m_sib1.at (0).cellAccessRelatedInfo.cellIdentity);
   return it->second;
 }
 
@@ -2259,7 +2260,7 @@ void
 LteEnbRrc::DoRecvMeasurementReport (uint16_t rnti, LteRrcSap::MeasurementReport msg)
 {
   NS_LOG_FUNCTION (this << rnti);
-  GetUeManager (rnti)->RecvMeasurementReport (msg);
+  GetUeManager (rnti)->RecvMeasurementReport (msg); 
 }
 
 void 
@@ -2632,6 +2633,7 @@ LteEnbRrc::RemoveUe (uint16_t rnti)
   std::map <uint16_t, Ptr<UeManager> >::iterator it = m_ueMap.find (rnti);
   NS_ASSERT_MSG (it != m_ueMap.end (), "request to remove UE info with unknown rnti " << rnti);
   uint16_t srsCi = (*it).second->GetSrsConfigurationIndex ();
+  std::cout << "\t\t\t removint UE with rnti " << rnti << " IMSI " << it->second->GetImsi() << std::endl;
   m_ueMap.erase (it);
   for (uint8_t i = 0; i < m_numberOfComponentCarriers; i++)
     {
