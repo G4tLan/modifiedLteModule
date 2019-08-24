@@ -132,7 +132,6 @@ public:
   LteUeRrc ();
 
 
-
   /**
    * Destructor
    */
