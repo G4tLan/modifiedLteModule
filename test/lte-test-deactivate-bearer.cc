@@ -280,10 +280,10 @@ LenaDeactivateBearerTestCase::DoRun (void)
     }
 
 
-  serverApps.Start (Seconds (0.030));
-  clientApps.Start (Seconds (0.030));
+  serverApps.Start (Seconds (0.060));
+  clientApps.Start (Seconds (0.060));
 
-  double statsStartTime = 0.04; // need to allow for RRC connection establishment + SRS
+  double statsStartTime = 0.07; // need to allow for RRC connection establishment + SRS
   double statsDuration = 1.0;
   double tolerance = 0.1;
 
@@ -301,7 +301,7 @@ LenaDeactivateBearerTestCase::DoRun (void)
    *   Instantiate De-activation using Simulator::Schedule() method which will initiate bearer de-activation after deActivateTime
    *   Instantiate De-activation in sequence (Time const &time, MEM mem_ptr, OBJ obj, T1 a1, T2 a2, T3 a3)
    */
-  Time deActivateTime (Seconds (1.5));
+  Time deActivateTime (Seconds (1.8));
   Simulator::Schedule (deActivateTime, &LteHelper::DeActivateDedicatedEpsBearer, lteHelper, ueDevice, enbDevice, 2);
 
   //stop simulation after 3 seconds

@@ -90,7 +90,6 @@ public:
    */
   virtual LteHandoverManagementSapProvider* GetLteHandoverManagementSapProvider () = 0;
 
-  virtual void setCellId(uint16_t cellId) = 0;
 protected:
 
   // inherited from Object

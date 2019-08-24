@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Nicola Baldo  <nbaldo@cttc.es>
  * Author: Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 
@@ -26,8 +36,9 @@
 #include <ns3/packet.h>
 #include <ns3/packet-burst.h>
 #include <ns3/random-variable-stream.h>
-
+#include "lte-prach-info.h"
 #include "lte-ue-mac.h"
+#include "lte-ue-phy.h"
 #include "lte-ue-net-device.h"
 #include "lte-radio-bearer-tag.h"
 #include <ns3/ff-mac-common.h>
@@ -67,6 +78,9 @@ public:
   virtual void AddLc (uint8_t lcId, LteUeCmacSapProvider::LogicalChannelConfig lcConfig, LteMacSapUser* msu);
   virtual void RemoveLc (uint8_t lcId);
   virtual void Reset ();
+  virtual void NotifyConnectionExpired ();
+  virtual void NotifyConnectionSuccessful ();
+  virtual void SetTimeAlignmentTimer (uint16_t timeAlignmentTimerCommon);
 
 private:
   LteUeMac* m_mac; ///< the UE MAC
@@ -78,29 +92,29 @@ UeMemberLteUeCmacSapProvider::UeMemberLteUeCmacSapProvider (LteUeMac* mac)
 {
 }
 
-void 
+void
 UeMemberLteUeCmacSapProvider::ConfigureRach (RachConfig rc)
 {
   m_mac->DoConfigureRach (rc);
 }
 
-  void 
+void
 UeMemberLteUeCmacSapProvider::StartContentionBasedRandomAccessProcedure ()
 {
   m_mac->DoStartContentionBasedRandomAccessProcedure ();
 }
 
- void 
+void
 UeMemberLteUeCmacSapProvider::StartNonContentionBasedRandomAccessProcedure (uint16_t rnti, uint8_t preambleId, uint8_t prachMask)
 {
   m_mac->DoStartNonContentionBasedRandomAccessProcedure (rnti, preambleId, prachMask);
 }
 
- void
- UeMemberLteUeCmacSapProvider::SetRnti (uint16_t rnti)
- {
-   m_mac->DoSetRnti (rnti);
- }
+void
+UeMemberLteUeCmacSapProvider::SetRnti (uint16_t rnti)
+{
+  m_mac->DoSetRnti (rnti);
+}
 
 void
 UeMemberLteUeCmacSapProvider::AddLc (uint8_t lcId, LogicalChannelConfig lcConfig, LteMacSapUser* msu)
@@ -118,6 +132,23 @@ void
 UeMemberLteUeCmacSapProvider::Reset ()
 {
   m_mac->DoReset ();
+}
+
+void
+UeMemberLteUeCmacSapProvider::NotifyConnectionExpired ()
+{
+  m_mac->DoNotifyConnectionExpired ();
+}
+
+void
+UeMemberLteUeCmacSapProvider::NotifyConnectionSuccessful ()
+{
+  m_mac->DoNotifyConnectionSuccessful ();
+}
+
+void UeMemberLteUeCmacSapProvider::SetTimeAlignmentTimer (uint16_t timeAlignmentTimerCommon)
+{
+  m_mac->DoSetTimeAlignmentTimer (timeAlignmentTimerCommon);
 }
 
 /// UeMemberLteMacSapProvider class
@@ -177,6 +208,8 @@ public:
   virtual void ReceivePhyPdu (Ptr<Packet> p);
   virtual void SubframeIndication (uint32_t frameNo, uint32_t subframeNo);
   virtual void ReceiveLteControlMessage (Ptr<LteControlMessage> msg);
+  virtual bool Msg3Ready ();
+  virtual void UpdateRaRnti (uint32_t raRnti);
 
 private:
   LteUeMac* m_mac; ///< the UE MAC
@@ -206,6 +239,17 @@ UeMemberLteUePhySapUser::ReceiveLteControlMessage (Ptr<LteControlMessage> msg)
   m_mac->DoReceiveLteControlMessage (msg);
 }
 
+bool
+UeMemberLteUePhySapUser::Msg3Ready ()
+{
+  return m_mac->DoMsg3Ready ();
+}
+
+void
+UeMemberLteUePhySapUser::UpdateRaRnti (uint32_t raRnti)
+{
+  m_mac->DoUpdateRaRnti (raRnti);
+}
 
 
 
@@ -214,26 +258,49 @@ UeMemberLteUePhySapUser::ReceiveLteControlMessage (Ptr<LteControlMessage> msg)
 ///////////////////////////////////////////////////////////
 
 
+static const int backoffParameterValue[16] = {
+  0, 10, 20, 30, 40, 60, 80, 120, 160, 240, 320, 480, 960, 960, 960, 960
+}; // 3GPP TS 36321 Tabel 7.2-1
+
 TypeId
 LteUeMac::GetTypeId (void)
 {
   static TypeId tid = TypeId ("ns3::LteUeMac")
     .SetParent<Object> ()
-    .SetGroupName("Lte")
-    .AddConstructor<LteUeMac> ();
+    .SetGroupName ("Lte")
+    .AddConstructor<LteUeMac> ()
+    .AddTraceSource ("TxPrachPreambleStart",
+                     "Trace fired when a new preamble transmission is started",
+                     MakeTraceSourceAccessor (&LteUeMac::m_preambleTxStartTrace),
+                     "ns3::LteUeMac::RachPreambleTxTracedCallback")
+    .AddTraceSource ("TxMsg3Start",
+                     "Trace fired when a new msg3 is queued for transmission",
+                     MakeTraceSourceAccessor (&LteUeMac::m_msg3TxStartTrace),
+                     "ns3::LteUeMac::Msg3TxTracedCallback")
+    .AddTraceSource ("TimeAlignmentTimerUpdate",
+                     "Trace fired when timing advance is received and time alignment timer is restarted",
+                     MakeTraceSourceAccessor (&LteUeMac::m_timeAlignmentTimerUpdateTrace),
+                     "ns3::LteUeMac::TimeAlignmentTimerTracedCallback")
+    .AddTraceSource ("ConnectedOutOfSnycRach",
+                     "Trace fired when random access procedure is triggered in connected out of sync state",
+                     MakeTraceSourceAccessor (&LteUeMac::m_ConnectedRachStartTrace),
+                     "ns3::LteUeMac::ConnectedRachStartTracedCallback")
+  ;
   return tid;
 }
 
 
 LteUeMac::LteUeMac ()
-  :  m_bsrPeriodicity (MilliSeconds (1)), // ideal behavior
-     m_bsrLast (MilliSeconds (0)),
-     m_freshUlBsr (false),
-     m_harqProcessId (0),
-     m_rnti (0),
-     m_rachConfigured (false),
-     m_waitingForRaResponse (false)
-  
+  :  m_bsrPeriodicity (MilliSeconds (1)),
+    // ideal behavior
+    m_bsrLast (MilliSeconds (0)),
+    m_freshUlBsr (false),
+    m_harqProcessId (0),
+    m_rnti (0),
+    m_rachConfigured (false),
+    m_message3Ready (false),
+    m_waitingForRaResponse (false)
+
 {
   NS_LOG_FUNCTION (this);
   m_miUlHarqProcessesPacket.resize (HARQ_PERIOD);
@@ -243,12 +310,17 @@ LteUeMac::LteUeMac ()
       m_miUlHarqProcessesPacket.at (i) = pb;
     }
   m_miUlHarqProcessesPacketTimer.resize (HARQ_PERIOD, 0);
-   
+
   m_macSapProvider = new UeMemberLteMacSapProvider (this);
   m_cmacSapProvider = new UeMemberLteUeCmacSapProvider (this);
   m_uePhySapUser = new UeMemberLteUePhySapUser (this);
   m_raPreambleUniformVariable = CreateObject<UniformRandomVariable> ();
   m_componentCarrierId = 0;
+  m_backoffTime = CreateObject<UniformRandomVariable> ();
+  m_rachPreambleReady = false;
+  m_contention = true; //true for contention based RA and non-contention based RA(only handover case)
+  m_uplinkOutOfSync = false; //by default UE is considered to be in sync since it has to accept the 1st RAR
+  m_rachStarted = false;
 }
 
 
@@ -307,15 +379,56 @@ LteUeMac::SetComponentCarrierId (uint8_t index)
 }
 
 void
+LteUeMac::SetImsi (uint64_t imsi)
+{
+  m_imsi = imsi;
+}
+
+uint64_t
+LteUeMac::GetImsi () const
+{
+  return m_imsi;
+}
+
+bool
+LteUeMac::DoMsg3Ready (void)
+{
+  return m_message3Ready;
+}
+
+void
+LteUeMac::DoUpdateRaRnti (uint32_t raRnti)
+{
+  NS_LOG_FUNCTION (this);
+  m_raRnti = raRnti;
+}
+
+
+void
 LteUeMac::DoTransmitPdu (LteMacSapProvider::TransmitPduParameters params)
 {
   NS_LOG_FUNCTION (this);
+  if (m_uplinkOutOfSync)//stop UL transmission after ue goes out of sync to avoid errors
+    {
+      NS_LOG_ERROR ("invalid transmission when UE with RNTI " << params.rnti << " is out of sync");
+      return;
+    }
   NS_ASSERT_MSG (m_rnti == params.rnti, "RNTI mismatch between RLC and MAC");
   LteRadioBearerTag tag (params.rnti, params.lcid, 0 /* UE works in SISO mode*/);
   params.pdu->AddPacketTag (tag);
   // store pdu in HARQ buffer
-  m_miUlHarqProcessesPacket.at (m_harqProcessId)->AddPacket (params.pdu);
-  m_miUlHarqProcessesPacketTimer.at (m_harqProcessId) = HARQ_PERIOD;
+  if (m_message3Ready) // tx msg3 and start contention resolution timer
+    {
+      m_miUlHarqProcessesPacket.at ((m_harqProcessId + 1) % HARQ_PERIOD)->AddPacket (params.pdu);
+      m_miUlHarqProcessesPacketTimer.at ((m_harqProcessId + 1) % HARQ_PERIOD) = HARQ_PERIOD;
+      Time contentionResolutionTimer = MilliSeconds (m_rachConfig.contentionResolutionTimer);
+      m_contentionResolutionTimeout = Simulator::Schedule (contentionResolutionTimer, &LteUeMac::ContentionResolutionTimeout, this);
+    }
+  else
+    {
+      m_miUlHarqProcessesPacket.at (m_harqProcessId)->AddPacket (params.pdu);
+      m_miUlHarqProcessesPacketTimer.at (m_harqProcessId) = HARQ_PERIOD;
+    }
   m_uePhySapProvider->SendMacPdu (params.pdu);
 }
 
@@ -323,10 +436,17 @@ void
 LteUeMac::DoReportBufferStatus (LteMacSapProvider::ReportBufferStatusParameters params)
 {
   NS_LOG_FUNCTION (this << (uint32_t) params.lcid);
-  
+  if (m_uplinkOutOfSync && !m_rachStarted) //trigger CB RA upon UL data arrival
+    {
+      NS_LOG_INFO ("UE out of sync, contention based random access started upon UL data arrival");
+      m_ConnectedRachStartTrace (m_imsi, m_rnti, "Contention Based Random Access started upon UL data arrival");
+      DoStartContentionBasedRandomAccessProcedure ();
+      return;
+    }
+
   std::map <uint8_t, LteMacSapProvider::ReportBufferStatusParameters>::iterator it;
-  
-  
+
+
   it = m_ulBsrReceived.find (params.lcid);
   if (it != m_ulBsrReceived.end ())
     {
@@ -349,27 +469,27 @@ LteUeMac::SendReportBufferStatus (void)
   if (m_rnti == 0)
     {
       NS_LOG_INFO ("MAC not initialized, BSR deferred");
-      return; 
+      return;
     }
 
   if (m_ulBsrReceived.size () == 0)
     {
       NS_LOG_INFO ("No BSR report to transmit");
-      return; 
+      return;
     }
   MacCeListElement_s bsr;
   bsr.m_rnti = m_rnti;
   bsr.m_macCeType = MacCeListElement_s::BSR;
 
   // BSR is reported for each LCG
-  std::map <uint8_t, LteMacSapProvider::ReportBufferStatusParameters>::iterator it;  
+  std::map <uint8_t, LteMacSapProvider::ReportBufferStatusParameters>::iterator it;
   std::vector<uint32_t> queue (4, 0); // one value per each of the 4 LCGs, initialized to 0
   for (it = m_ulBsrReceived.begin (); it != m_ulBsrReceived.end (); it++)
     {
       uint8_t lcid = it->first;
       std::map <uint8_t, LcInfo>::iterator lcInfoMapIt;
       lcInfoMapIt = m_lcInfoMap.find (lcid);
-      NS_ASSERT (lcInfoMapIt !=  m_lcInfoMap.end ());
+      NS_ASSERT_MSG (lcInfoMapIt !=  m_lcInfoMap.end (), "lcid " << (uint32_t)lcid);
       NS_ASSERT_MSG ((lcid != 0) || (((*it).second.txQueueSize == 0)
                                      && ((*it).second.retxQueueSize == 0)
                                      && ((*it).second.statusPduSize == 0)),
@@ -391,18 +511,18 @@ LteUeMac::SendReportBufferStatus (void)
 
 }
 
-void 
+void
 LteUeMac::RandomlySelectAndSendRaPreamble ()
 {
   NS_LOG_FUNCTION (this);
-  // 3GPP 36.321 5.1.1  
+  // 3GPP 36.321 5.1.1
   NS_ASSERT_MSG (m_rachConfigured, "RACH not configured");
   // assume that there is no Random Access Preambles group B
   m_raPreambleId = m_raPreambleUniformVariable->GetInteger (0, m_rachConfig.numberOfRaPreambles - 1);
-  bool contention = true;
-  SendRaPreamble (contention);
+  m_raPreambleStartTime = Simulator::Now ();
+  m_rachPreambleReady = true;
 }
-   
+
 void
 LteUeMac::SendRaPreamble (bool contention)
 {
@@ -413,62 +533,105 @@ LteUeMac::SendRaPreamble (bool contention)
   // m_uePhySapProvider->SendLteControlMessage (msg)) so that it can
   // bypass the m_ulConfigured flag. This is reasonable, since In fact
   // the RACH preamble is sent on 6RB bandwidth so the uplink
-  // bandwidth does not need to be configured. 
+  // bandwidth does not need to be configured.
   NS_ASSERT (m_subframeNo > 0); // sanity check for subframe starting at 1
   m_raRnti = m_subframeNo - 1;
-  m_uePhySapProvider->SendRachPreamble (m_raPreambleId, m_raRnti);
-  NS_LOG_INFO (this << " sent preamble id " << (uint32_t) m_raPreambleId << ", RA-RNTI " << (uint32_t) m_raRnti);
-  // 3GPP 36.321 5.1.4 
-  Time raWindowBegin = MilliSeconds (3); 
+
+
+  Time current = Simulator::Now ();
+  NS_LOG_INFO (this << " sent preamble id " << (uint32_t) m_raPreambleId << ", RA-RNTI " << (uint32_t) m_raRnti << " at time " << current.GetSeconds ());
+
+  Ptr<RachPreambleLteControlMessage> msg = Create<RachPreambleLteControlMessage> ();
+  msg->SetRapId (m_raPreambleId);
+  msg->SetImsi (m_imsi);
+  msg->SetStartTime (m_raPreambleStartTime);
+
+  m_uePhySapProvider->SendRachPreamble (msg);
+
+  // fire trace
+  m_preambleTxStartTrace (m_imsi);
+
+  // 3GPP 36.321 5.1.4
+  Time raWindowBegin = MilliSeconds (3);
   Time raWindowEnd = MilliSeconds (3 + m_rachConfig.raResponseWindowSize);
-  Simulator::Schedule (raWindowBegin, &LteUeMac::StartWaitingForRaResponse, this);
+  //m_waitforRarEvent condition added to cancel this event during reset
+  m_waitforRarEvent = Simulator::Schedule (raWindowBegin, &LteUeMac::StartWaitingForRaResponse, this);
   m_noRaResponseReceivedEvent = Simulator::Schedule (raWindowEnd, &LteUeMac::RaResponseTimeout, this, contention);
+  m_rachPreambleReady = false;
 }
 
-void 
+void
 LteUeMac::StartWaitingForRaResponse ()
 {
-   NS_LOG_FUNCTION (this);
-   m_waitingForRaResponse = true;
+  NS_LOG_FUNCTION (this);
+  m_waitingForRaResponse = true;
 }
 
-void 
+void
 LteUeMac::RecvRaResponse (BuildRarListElement_s raResponse)
 {
   NS_LOG_FUNCTION (this);
   m_waitingForRaResponse = false;
   m_noRaResponseReceivedEvent.Cancel ();
-  NS_LOG_INFO ("got RAR for RAPID " << (uint32_t) m_raPreambleId << ", setting T-C-RNTI = " << raResponse.m_rnti);
-  m_rnti = raResponse.m_rnti;
-  m_cmacSapUser->SetTemporaryCellRnti (m_rnti);
-  // in principle we should wait for contention resolution,
-  // but in the current LTE model when two or more identical
-  // preambles are sent no one is received, so there is no need
-  // for contention resolution
-  m_cmacSapUser->NotifyRandomAccessSuccessful ();
+  m_uePhySapProvider->NotifyRarReceived ();
+  NS_LOG_INFO ("Got RAR for RAPID " << (uint32_t) m_raPreambleId << ", setting T-C-RNTI = " << raResponse.m_rnti);
+  if (m_contention && !m_uplinkOutOfSync) //Set RNTI only when UE is uplink synchronized
+    {
+      m_rnti = raResponse.m_rnti;
+      m_cmacSapUser->SetTemporaryCellRnti (m_rnti);
+      m_cmacSapUser->NotifyRarReceived ();
+    }
+
+  //Assigning time alignment timer value from RAR msg and starting the timer
+  if (m_timeAlignmentTimeoutEvent.IsExpired ())
+    {
+      m_timeAlignmentTimeoutEvent = Simulator::Schedule (m_timeAlignmentTimer, &LteUeMac::TimeAlignmentTimeout, this);
+      NS_LOG_INFO ("TimeAlignmentTimer started/restarted " << m_timeAlignmentTimer);
+      m_cmacSapUser->NotifyEnbTimeAlignmentTimerToStart (m_timeAlignmentTimer, m_rnti);
+      m_timeAlignmentTimerUpdateTrace (m_imsi, m_rnti, m_timeAlignmentTimer, "Timing advance received in RAR");
+    }
+
+  //if RA triggered in UE CONNECTED: out-of-sync state, then ignore T-C-RNTI since UE already has RNTI
+  if (m_uplinkOutOfSync)
+    {
+      if (!m_contention)//if PDCCH order triggered RA in UE CONNECTED state for DL data arrival
+        {
+          m_contention = true; //set it back to default
+          NS_LOG_INFO ("UE back in-sync due to DL data arrival (PDCCH order triggered random access)");
+          DoNotifyConnectionSuccessful ();
+          return; //RA is considered successful, no need of further messages
+        }
+      //if UE triggered RA in UE CONNECTED state for UL data arrival
+      NS_LOG_INFO ("UE back in-sync due to UL data arrival (UE triggered random access)");
+      SendCRntiMacCe (raResponse.m_rnti); //Now, sent on ideal uplink channel;later can be sent on real uplink ctrl channel using RAR UL grant
+      Time contentionResolutionTimer = MilliSeconds (m_rachConfig.contentionResolutionTimer);
+      m_contentionResolutionTimeout = Simulator::Schedule (contentionResolutionTimer, &LteUeMac::ContentionResolutionTimeout, this);
+      m_cmacSapUser->NotifyRarReceived ();//notify RRC that RAR is received for contention based random access triggered in UE CONNECTED state
+    }
+
   // trigger tx opportunity for Message 3 over LC 0
   // this is needed since Message 3's UL GRANT is in the RAR, not in UL-DCIs
   const uint8_t lc0Lcid = 0;
-  std::map <uint8_t, LcInfo>::iterator lc0InfoIt = m_lcInfoMap.find (lc0Lcid);
+  std::map<uint8_t, LcInfo>::iterator lc0InfoIt = m_lcInfoMap.find (lc0Lcid);
   NS_ASSERT (lc0InfoIt != m_lcInfoMap.end ());
-  std::map <uint8_t, LteMacSapProvider::ReportBufferStatusParameters>::iterator lc0BsrIt
-    = m_ulBsrReceived.find (lc0Lcid);
-  if ((lc0BsrIt != m_ulBsrReceived.end ())
-      && (lc0BsrIt->second.txQueueSize > 0))
+  std::map<uint8_t, LteMacSapProvider::ReportBufferStatusParameters>::iterator lc0BsrIt = m_ulBsrReceived.find (lc0Lcid);
+  if ((lc0BsrIt != m_ulBsrReceived.end ()) && (lc0BsrIt->second.txQueueSize > 0))
     {
-      NS_ASSERT_MSG (raResponse.m_grant.m_tbSize > lc0BsrIt->second.txQueueSize, 
-                     "segmentation of Message 3 is not allowed");
+      NS_ASSERT_MSG (raResponse.m_grant.m_tbSize > lc0BsrIt->second.txQueueSize, "segmentation of Message 3 is not allowed");
+      m_message3Ready = true;
+      // fire trace to notify that msg 3 is ready!
+      m_msg3TxStartTrace (m_imsi);
       // this function can be called only from primary carrier
       if (m_componentCarrierId > 0)
         {
           NS_FATAL_ERROR ("Function called on wrong componentCarrier");
         }
-      lc0InfoIt->second.macSapUser->NotifyTxOpportunity (raResponse.m_grant.m_tbSize, 0, 0, m_componentCarrierId, m_rnti, lc0Lcid); 
+      lc0InfoIt->second.macSapUser->NotifyTxOpportunity (raResponse.m_grant.m_tbSize, 0, 0, m_componentCarrierId, m_rnti, lc0Lcid);
       lc0BsrIt->second.txQueueSize = 0;
     }
 }
 
-void 
+void
 LteUeMac::RaResponseTimeout (bool contention)
 {
   NS_LOG_FUNCTION (this << contention);
@@ -477,15 +640,19 @@ LteUeMac::RaResponseTimeout (bool contention)
   ++m_preambleTransmissionCounter;
   if (m_preambleTransmissionCounter == m_rachConfig.preambleTransMax + 1)
     {
-      NS_LOG_INFO ("RAR timeout, preambleTransMax reached => giving up");
+      NS_LOG_INFO ("RAR timeout, preambleTransMax reached => giving up - rnti " << m_rnti);
       m_cmacSapUser->NotifyRandomAccessFailed ();
     }
   else
     {
-      NS_LOG_INFO ("RAR timeout, re-send preamble");
+
+      double backoffInterval = m_backoffTime->GetValue (0, backoffParameterValue[m_backoffParameter]);
+      NS_LOG_INFO ("RAR timeout, re-send preamble after backoff " << backoffInterval);
+      // the previous RAR msg need to be purged
+      m_uePhySapProvider->DeletePrachPreamble ();
       if (contention)
         {
-          RandomlySelectAndSendRaPreamble ();
+          m_reSendRaPreambleEvent = Simulator::Schedule (MilliSeconds (backoffInterval), &LteUeMac::RandomlySelectAndSendRaPreamble, this);
         }
       else
         {
@@ -494,15 +661,16 @@ LteUeMac::RaResponseTimeout (bool contention)
     }
 }
 
-void 
+void
 LteUeMac::DoConfigureRach (LteUeCmacSapProvider::RachConfig rc)
 {
   NS_LOG_FUNCTION (this);
   m_rachConfig = rc;
   m_rachConfigured = true;
+  m_uePhySapProvider->ConfigurePrach (rc);
 }
 
-void 
+void
 LteUeMac::DoStartContentionBasedRandomAccessProcedure ()
 {
   NS_LOG_FUNCTION (this);
@@ -511,6 +679,7 @@ LteUeMac::DoStartContentionBasedRandomAccessProcedure ()
   NS_ASSERT_MSG (m_rachConfigured, "RACH not configured");
   m_preambleTransmissionCounter = 0;
   m_backoffParameter = 0;
+  m_rachStarted = true;
   RandomlySelectAndSendRaPreamble ();
 }
 
@@ -521,8 +690,7 @@ LteUeMac::DoSetRnti (uint16_t rnti)
   m_rnti = rnti;
 }
 
-
-void 
+void
 LteUeMac::DoStartNonContentionBasedRandomAccessProcedure (uint16_t rnti, uint8_t preambleId, uint8_t prachMask)
 {
   NS_LOG_FUNCTION (this << " rnti" << rnti);
@@ -530,6 +698,10 @@ LteUeMac::DoStartNonContentionBasedRandomAccessProcedure (uint16_t rnti, uint8_t
   m_rnti = rnti;
   m_raPreambleId = preambleId;
   bool contention = false;
+  m_preambleTransmissionCounter = 0;
+  m_backoffParameter = 0;
+  m_raPreambleStartTime = Simulator::Now (); //start time for ra preamble during NCB RACH
+  m_rachStarted = true;
   SendRaPreamble (contention);
 }
 
@@ -538,7 +710,7 @@ LteUeMac::DoAddLc (uint8_t lcId,  LteUeCmacSapProvider::LogicalChannelConfig lcC
 {
   NS_LOG_FUNCTION (this << " lcId" << (uint32_t) lcId);
   NS_ASSERT_MSG (m_lcInfoMap.find (lcId) == m_lcInfoMap.end (), "cannot add channel because LCID " << lcId << " is already present");
-  
+
   LcInfo lcInfo;
   lcInfo.lcConfig = lcConfig;
   lcInfo.macSapUser = msu;
@@ -557,12 +729,12 @@ void
 LteUeMac::DoReset ()
 {
   NS_LOG_FUNCTION (this);
-  std::map <uint8_t, LcInfo>::iterator it = m_lcInfoMap.begin ();
+  std::map<uint8_t, LcInfo>::iterator it = m_lcInfoMap.begin ();
   while (it != m_lcInfoMap.end ())
     {
       // don't delete CCCH)
       if (it->first == 0)
-        {          
+        {
           ++it;
         }
       else
@@ -573,14 +745,55 @@ LteUeMac::DoReset ()
     }
 
   m_noRaResponseReceivedEvent.Cancel ();
+  m_reSendRaPreambleEvent.Cancel ();
+  m_contentionResolutionTimeout.Cancel ();
   m_rachConfigured = false;
   m_freshUlBsr = false;
   m_ulBsrReceived.clear ();
+  m_message3Ready = false;
+
+  //additional data to be cleared
+  m_rachPreambleReady = false;
+  m_waitforRarEvent.Cancel ();
+  m_rnti = 0;
+  m_timeAlignmentTimeoutEvent.Cancel ();
+  m_waitingForRaResponse = false;
+  m_harqProcessId = 0;
+  m_miUlHarqProcessesPacket.clear ();
+  m_miUlHarqProcessesPacket.resize (HARQ_PERIOD);
+  for (uint8_t i = 0; i < m_miUlHarqProcessesPacket.size (); i++)
+    {
+      Ptr<PacketBurst> pb = CreateObject<PacketBurst> ();
+      m_miUlHarqProcessesPacket.at (i) = pb;
+    }
+  m_miUlHarqProcessesPacketTimer.resize (HARQ_PERIOD, 0);
+  m_contention = true;
+  m_uplinkOutOfSync = false;
+  m_rachStarted = false;
+}
+
+void
+LteUeMac::DoNotifyConnectionExpired ()
+{
+  DoReset ();
+}
+
+void
+LteUeMac::DoNotifyConnectionSuccessful ()
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_INFO ("Random Access successful");
+  m_message3Ready = false;
+  m_contentionResolutionTimeout.Cancel ();
+  m_uplinkOutOfSync = false;
+  m_rachStarted = false;
+  m_uePhySapProvider->NotifyConnectionSuccessful (); //notify the PHY that RRC connection was successfully established
 }
 
 void
 LteUeMac::DoReceivePhyPdu (Ptr<Packet> p)
 {
+  NS_LOG_FUNCTION (this);
   LteRadioBearerTag tag;
   p->RemovePacketTag (tag);
   if (tag.GetRnti () == m_rnti)
@@ -643,7 +856,7 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
             {
               // send only the status PDU which has highest priority
               statusPduPriority = true;
-              NS_LOG_DEBUG (this << " Reduced resource -> send only Status, b ytes " << statusPduMinSize);
+              NS_LOG_DEBUG (this << " Reduced resource -> send only Status, bytes " << statusPduMinSize);
               if (dci.m_tbSize < statusPduMinSize)
                 {
                   NS_FATAL_ERROR ("Insufficient Tx Opportunity for sending a status message");
@@ -684,7 +897,7 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
                               NS_FATAL_ERROR ("Insufficient Tx Opportunity for sending a status message");
                             }
                         }
-                        
+
                       if ((bytesForThisLc > 7)    // 7 is the min TxOpportunity useful for Rlc
                           && (((*itBsr).second.retxQueueSize > 0)
                               || ((*itBsr).second.txQueueSize > 0)))
@@ -711,8 +924,8 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
                                   // for SRB1 (using RLC AM) it's better to
                                   // overestimate RLC overhead rather than
                                   // underestimate it and risk unneeded
-                                  // segmentation which increases delay 
-                                  rlcOverhead = 4;                                  
+                                  // segmentation which increases delay
+                                  rlcOverhead = 4;
                                 }
                               else
                                 {
@@ -733,7 +946,7 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
                         }
                       else
                         {
-                          if ( ((*itBsr).second.retxQueueSize > 0) || ((*itBsr).second.txQueueSize > 0)) 
+                          if ( ((*itBsr).second.retxQueueSize > 0) || ((*itBsr).second.txQueueSize > 0))
                             {
                               // resend BSR info for updating eNB peer MAC
                               m_freshUlBsr = true;
@@ -755,17 +968,26 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
               Ptr<Packet> pkt = (*j)->Copy ();
               m_uePhySapProvider->SendMacPdu (pkt);
             }
-          m_miUlHarqProcessesPacketTimer.at (m_harqProcessId) = HARQ_PERIOD;          
+          if (m_message3Ready) // start contention resolution timer if this is an harq of msg3
+            {
+              Time contentionResolutionTimer = MilliSeconds (m_rachConfig.contentionResolutionTimer);
+              m_contentionResolutionTimeout.Cancel ();
+              m_contentionResolutionTimeout = Simulator::Schedule (contentionResolutionTimer, &LteUeMac::ContentionResolutionTimeout, this);
+            }
+          m_miUlHarqProcessesPacketTimer.at (m_harqProcessId) = HARQ_PERIOD;
         }
 
     }
   else if (msg->GetMessageType () == LteControlMessage::RAR)
     {
+      Ptr<RarLteControlMessage> rarMsg = DynamicCast<RarLteControlMessage> (msg);
+      uint16_t raRnti = rarMsg->GetRaRnti ();
+      m_backoffParameter = rarMsg->GetBackoffIndicator ();
+      NS_LOG_INFO (this << "got RAR with RA-RNTI " << (uint32_t) raRnti << ", expecting " << (uint32_t) m_raRnti <<
+                   " updated m_backoffParameter to " << m_backoffParameter);
+
       if (m_waitingForRaResponse)
         {
-          Ptr<RarLteControlMessage> rarMsg = DynamicCast<RarLteControlMessage> (msg);
-          uint16_t raRnti = rarMsg->GetRaRnti ();
-          NS_LOG_LOGIC (this << "got RAR with RA-RNTI " << (uint32_t) raRnti << ", expecting " << (uint32_t) m_raRnti);
           if (raRnti == m_raRnti) // RAR corresponds to TX subframe of preamble
             {
               for (std::list<RarLteControlMessage::Rar>::const_iterator it = rarMsg->RarListBegin ();
@@ -783,10 +1005,92 @@ LteUeMac::DoReceiveLteControlMessage (Ptr<LteControlMessage> msg)
             }
         }
     }
+  //Restart time alignment timer as time advance command is received
+  else if (msg->GetMessageType () == LteControlMessage::TAC)
+    {
+      NS_LOG_INFO ("Timing advance command received");
+      Ptr<TacLteControlMessage> tacMsg = DynamicCast<TacLteControlMessage> (msg);
+      m_timeAlignmentTimeoutEvent.Cancel ();
+      uint16_t DynamicTimer = tacMsg->GetTimeAlignmentTimer ();
+      if (DynamicTimer != 0)
+        {
+          m_timeAlignmentTimer = MilliSeconds (DynamicTimer);
+        }
+      m_timeAlignmentTimeoutEvent = Simulator::Schedule (m_timeAlignmentTimer, &LteUeMac::TimeAlignmentTimeout, this);
+      NS_LOG_INFO ("TimeAlignmentTimer started/restarted by UE: " << m_imsi << " timer value: " << m_timeAlignmentTimer);
+      m_timeAlignmentTimerUpdateTrace (m_imsi, m_rnti, m_timeAlignmentTimer, "Timing advance received in TAC MAC CE");
+      m_cmacSapUser->NotifyEnbTimeAlignmentTimerToStart (m_timeAlignmentTimer, m_rnti);
+    }
+  else if (msg->GetMessageType () == LteControlMessage::DL_DCI) //PDCCH order reception
+    {
+      NS_LOG_INFO ("PDCCH ORDER DL_DCI received");
+      Ptr<DlDciLteControlMessage> msg2 = DynamicCast<DlDciLteControlMessage> (msg);
+      DlDciListElement_s dci = msg2->GetDci ();
+      if (m_uplinkOutOfSync && !m_rachStarted)
+        {
+          m_ConnectedRachStartTrace (m_imsi, dci.m_rnti, "Non Contention Based Random Access started upon DL data arrival");
+          m_contention = false; //indicates non Contention Based RandomAccessProcedure triggered by enodeb with PDCCH order
+          DoStartNonContentionBasedRandomAccessProcedure (dci.m_rnti, dci.m_preambleIndex, dci.m_prachMaskIndex);
+        }
+
+    }
+  else if (msg->GetMessageType () == LteControlMessage::CRI && m_contentionResolutionTimeout.IsRunning ()) //contention resolution identity
+    {
+      NS_LOG_INFO ("contention resolution msg received");
+      // this function can be called only from primary carrier
+      if (m_componentCarrierId > 0)
+        {
+          NS_FATAL_ERROR ("Contention Resolution message received on wrong componentCarrier");
+        }
+      Ptr<CriLteControlMessage> crMsg = DynamicCast<CriLteControlMessage> (msg);
+      if (crMsg->GetUeContentionResolutionIdentity () == m_imsi)
+        {
+          m_cmacSapUser->NotifyContentionResolutionMsgReceived ();
+        }
+    }
   else
     {
       NS_LOG_WARN (this << " LteControlMessage not recognized");
     }
+}
+
+void
+LteUeMac::ContentionResolutionTimeout (void)
+{
+  NS_LOG_FUNCTION (this);
+  // the maximum number of retx for msg3 has been reached and
+  // as the standard asks the ra procedure has to begin once again
+  // however in this implementation msg3 piggybacks RrcConnectionRequest
+  // therefore the new ra procedure must be triggered by rrc
+  m_noRaResponseReceivedEvent.Cancel ();
+  m_contentionResolutionTimeout.Cancel ();
+  //notify rrc about contention resolution timeout
+  m_cmacSapUser->NotifyContentionResolutionTimeout ();
+  m_uePhySapProvider->NotifyConnectionExpired (); //reset phy
+
+  if (!m_uplinkOutOfSync)
+    {
+      m_rnti = 0; //reset RNTI only if the UE is uplink in sync (initial random access case)
+
+    }
+  m_timeAlignmentTimeoutEvent.Cancel (); //cancel time alignment timer when contention resolution timer expires
+  m_message3Ready = false;
+  m_waitingForRaResponse = false;
+
+  // 3GPP 36.321 5.1.5
+  ++m_preambleTransmissionCounter;
+  if (m_preambleTransmissionCounter == m_rachConfig.preambleTransMax + 1)
+    {
+      NS_LOG_INFO ("ContentionResolutionTimeout timeout, preambleTransMax reached => giving up - rnti " << m_rnti);
+      m_cmacSapUser->NotifyRandomAccessFailed ();
+    }
+  else
+    {
+      double backoffInterval = m_backoffTime->GetValue (0, backoffParameterValue[m_backoffParameter]);
+      NS_LOG_INFO ("ContentionResolutionTimeout timeout, re-send preamble after backoff " << backoffInterval);
+      m_reSendRaPreambleEvent = Simulator::Schedule (MilliSeconds (backoffInterval), &LteUeMac::RandomlySelectAndSendRaPreamble, this);
+    }
+
 }
 
 void
@@ -821,6 +1125,28 @@ LteUeMac::DoSubframeIndication (uint32_t frameNo, uint32_t subframeNo)
   m_frameNo = frameNo;
   m_subframeNo = subframeNo;
   RefreshHarqProcessesPacketBuffer ();
+  if (m_rachPreambleReady)
+    {
+      uint32_t next_subframeNo = subframeNo;
+      uint32_t next_frameNo = frameNo;
+
+      if (subframeNo + 1 > 10)
+        {
+          next_frameNo = frameNo + 1;
+          next_subframeNo = 1;
+        }
+      else
+        {
+          next_subframeNo = subframeNo + 1;
+        }
+
+      if (LtePrachInfo::IsPrachSff (next_frameNo, next_subframeNo))
+      // in the next frame send prach
+        {
+          NS_LOG_INFO ("At frame " << frameNo << " subframe " << subframeNo << " call SendRaPreamble");
+          SendRaPreamble (true);
+        }
+    }
   if ((Simulator::Now () >= m_bsrLast + m_bsrPeriodicity) && (m_freshUlBsr == true))
     {
       SendReportBufferStatus ();
@@ -836,7 +1162,64 @@ LteUeMac::AssignStreams (int64_t stream)
 {
   NS_LOG_FUNCTION (this << stream);
   m_raPreambleUniformVariable->SetStream (stream);
+  m_backoffTime->SetStream (stream);
   return 1;
+}
+
+
+void
+LteUeMac::TimeAlignmentTimeout ()
+{
+  NS_LOG_FUNCTION (this << m_rnti);
+  m_timeAlignmentTimeoutEvent.Cancel ();
+  if (!m_cmacSapUser->NotifyTimeAlignmentTimeout ())
+    {
+      return;
+    }
+  m_uplinkOutOfSync = true;
+
+  //data to be cleared
+  m_noRaResponseReceivedEvent.Cancel ();  //RAR timer
+  m_waitforRarEvent.Cancel ();
+  m_reSendRaPreambleEvent.Cancel ();  //resend preamble after backoff event
+  m_contentionResolutionTimeout.Cancel ();
+  m_freshUlBsr = false;
+  m_ulBsrReceived.clear ();  //clear ul bsr reports
+  m_message3Ready = false;
+  m_rachPreambleReady = false;
+  m_waitingForRaResponse = false;
+  m_rachStarted = false;
+
+  m_harqProcessId = 0;
+  m_miUlHarqProcessesPacket.clear ();  //clear harq packets
+  m_miUlHarqProcessesPacket.resize (HARQ_PERIOD);
+  for (uint8_t i = 0; i < m_miUlHarqProcessesPacket.size (); i++)
+    {
+      Ptr<PacketBurst> pb = CreateObject<PacketBurst> ();
+      m_miUlHarqProcessesPacket.at (i) = pb;
+    }
+  m_miUlHarqProcessesPacketTimer.resize (HARQ_PERIOD, 0);  //reset harq timer
+
+}
+
+void
+LteUeMac::DoSetTimeAlignmentTimer (uint16_t timeAlignmentTimerCommon)
+{
+  m_timeAlignmentTimer = MilliSeconds (timeAlignmentTimerCommon);
+}
+
+void
+LteUeMac::SendCRntiMacCe (uint16_t tempRnti)
+{
+  NS_LOG_FUNCTION (this << m_rnti);
+  NS_LOG_INFO ("temp RNTI: " << tempRnti);
+  MacCeListElement_s ce;
+  ce.m_macCeType = MacCeListElement_s::CRNTI;
+  ce.m_rnti = m_rnti;
+  Ptr<CRntiLteControlMessage> msg = Create<CRntiLteControlMessage> ();
+  msg->SetCRnti (ce);
+  msg->SetTempRnti (tempRnti);
+  m_uePhySapProvider->SendLteControlMessage (msg);
 }
 
 } // namespace ns3

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2014 Piotr Gawlowicz
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,10 @@
  *
  * Author: Piotr Gawlowicz <gawlowicz.p@gmail.com>
  *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include <ns3/simulator.h>
@@ -427,6 +432,14 @@ LteDownlinkPowerControlTestCase::DoRun (void)
   // Attach a UE to a eNB
   lteHelper->Attach (ueDevs, enbDevs.Get (0));
 
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev = ueDevs.Get (0);
+  ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+
   PointerValue tmp;
   enbDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
   Ptr<LteFfrSimple> simpleFfrAlgorithm = DynamicCast<LteFfrSimple>(tmp.GetObject ());
@@ -568,6 +581,14 @@ LteDownlinkPowerControlRrcConnectionReconfigurationTestCase::DoRun (void)
 
   // Attach a UE to a eNB
   lteHelper->Attach (ueDevs, enbDevs.Get (0));
+
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev = ueDevs.Get (0);
+  ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
 
   PointerValue tmp;
   enbDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);

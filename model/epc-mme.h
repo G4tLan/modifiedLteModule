@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_MME_H
@@ -27,6 +30,7 @@
 
 #include <map>
 #include <list>
+#include <ns3/simulator.h>
 
 namespace ns3 {
 
@@ -167,6 +171,24 @@ private:
    */
   void DoDeleteBearerRequest (EpcS11SapMme::DeleteBearerRequestMessage msg);
 
+  /**
+   * Upon receiving Downlink Data Notification message, start the paging procedure
+   * by starting the T3413 timer and send the S1AP paging message to eNodeB
+   * 
+   *
+   * \param msg Downlink Data Notification message
+   */
+  void DoDownlinkDataNotification (EpcS11SapMme::DownlinkDataNotificationMessage msg);
+
+  /**
+   * Upon receiving the notification that the bearers are set up,
+   * notify SGW/PGW to release the buffered downlink packets to UE
+   * 
+   *
+   * \param imsi imsi of the UE
+   */
+  void DoNotifyBearerSetupCompleted(uint64_t imsi);
+
 
   /**
    * Hold info on an EPS bearer to be activated
@@ -191,6 +213,16 @@ private:
     uint16_t cellId; ///< cell ID
     std::list<BearerInfo> bearersToBeActivated; ///< list of bearers to be activated
     uint16_t bearerCounter; ///< bearer counter
+
+    /**
+     * Time limit for each attempt of the paging procedure. Set when the
+     * MME receives the Downlink Data Notification message. Calling
+     * EpcMme::RetransmitPagingMsg when it expires. Cancelled when
+     * initial UE message is received. Value is network dependent.
+     * 
+     */
+     EventId m_t3413Timeout;
+     uint16_t pagingRetransmissions;///< An UE can be paged maximum of 4 times before aborting the procedure
   };
 
   /**
@@ -224,13 +256,30 @@ private:
   std::map<uint16_t, Ptr<EnbInfo> > m_enbInfoMap;
 
 
-  
+  std::vector<uint16_t> m_enbList;///< list of eNodeBs attached to the MME by their cell IDs
 
   EpcS1apSapMme* m_s1apSapMme; ///< EpcS1apSapMme
 
   EpcS11SapMme* m_s11SapMme; ///< EpcS11SapMme
   EpcS11SapSgw* m_s11SapSgw; ///< EpcS11SapSgw
-  
+
+  /**
+   * Retransmit the S1AP paging message upon T3413 timer expiry.
+   * Restart the timer.
+   * 
+   */
+  void RetransmitPagingMsg(Ptr<UeInfo> ueInfo, EpcS1apSapEnb::S1apPagingMessage pmsg);
+
+  /**
+   * The 'T3413' attribute. After transmitting the S1AP paging message if the
+   * paging procedure is not completed in time, the timer is restarted and message
+   * is resent till the max number of retransmissions is reached.
+   * 
+   * Value should be same (for simulation with large number of UEs)
+   * or greater than paging cycle of the UE to avoid synchronization errors
+   * (This is not specified in standard and inferred from observation).
+   */
+  Time m_t3413;
 };
 
 

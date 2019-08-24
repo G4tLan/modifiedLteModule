@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 
@@ -48,6 +52,7 @@ public:
   virtual void NotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, uint8_t componentCarrierId, uint16_t rnti, uint8_t lcid);
   virtual void NotifyHarqDeliveryFailure ();
   virtual void ReceivePdu (Ptr<Packet> p, uint16_t rnti, uint8_t lcid);
+  // virtual void SendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId);
 
 private:
   LteRlcSpecificLteMacSapUser ();
@@ -81,6 +86,13 @@ LteRlcSpecificLteMacSapUser::ReceivePdu (Ptr<Packet> p, uint16_t rnti, uint8_t l
   m_rlc->DoReceivePdu (p, rnti, lcid);
 }
 
+/*
+void 
+LteRlcSpecificLteMacSapUser::SendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId)
+{
+  m_rlc->DoSendMessage3Rach (bytes, layer, harqId);
+}
+*/
 
 ///////////////////////////////////////
 
@@ -256,6 +268,14 @@ LteRlcSm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
   m_macSapProvider->TransmitPdu (params);
   ReportBufferStatus ();
 }
+
+/* 
+void
+LteRlcSm::DoSendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId)
+{
+  NS_ASSERT_MSG(false, "It is not possible to send RACH message 3 through SM rlc");
+}
+*/
 
 void
 LteRlcSm::DoNotifyHarqDeliveryFailure ()

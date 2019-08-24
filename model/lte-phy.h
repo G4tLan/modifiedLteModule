@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,6 +19,9 @@
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <mmiozzo@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #ifndef LTE_PHY_H
@@ -179,6 +183,18 @@ public:
   */
   std::list<Ptr<LteControlMessage> > GetControlMessages (void);
 
+  /**
+  * \param m the rach preamble message to be sent
+  * 
+  */
+  void SetRachPreambleMessages (Ptr<LteControlMessage> m);
+
+  /**
+  * \returns the list of rach preambles to be sent
+  * 
+  */
+  std::list<Ptr<LteControlMessage> > GetRachPreambleMessages (void);
+
 
   /** 
    * generate a CQI report based on the given SINR of Ctrl frame
@@ -289,6 +305,10 @@ protected:
   std::vector< Ptr<PacketBurst> > m_packetBurstQueue;
   /// A queue of control messages to be sent.
   std::vector< std::list<Ptr<LteControlMessage> > > m_controlMessagesQueue;
+
+  /// A queue of random access preambles messages to be sent. 
+  std::vector< std::list<Ptr<LteControlMessage> > > m_prachMessageQueue;
+
   /**
    * Delay between MAC and channel layer in terms of TTIs. It is the delay that
    * occurs between a scheduling decision in the MAC and the actual start of

@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab. 
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition + fix for bug 2161)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #include <ns3/fatal-error.h>
@@ -61,6 +68,13 @@ EpcMme::GetTypeId (void)
     .SetParent<Object> ()
     .SetGroupName("Lte")
     .AddConstructor<EpcMme> ()
+    .AddAttribute("T3413",
+                  "Timer for the paging procedure "
+		  "(i.e., the procedure is deemed as failed if it takes longer than this)"
+		  "Value is network dependent. See 3GPP TS 24.301 10.1.",
+		  TimeValue(Seconds(3)),
+		  MakeTimeAccessor(&EpcMme::m_t3413),
+		  MakeTimeChecker())
     ;
   return tid;
 }
@@ -92,6 +106,7 @@ EpcMme::AddEnb (uint16_t gci, Ipv4Address enbS1uAddr, EpcS1apSapEnb* enbS1apSap)
   enbInfo->s1uAddr = enbS1uAddr;
   enbInfo->s1apSapEnb = enbS1apSap;
   m_enbInfoMap[gci] = enbInfo;
+  m_enbList.push_back(gci);//store the eNodeBs attached to an MME
 }
 
 void 
@@ -103,6 +118,7 @@ EpcMme::AddUe (uint64_t imsi)
   ueInfo->mmeUeS1Id = imsi;
   m_ueInfoMap[imsi] = ueInfo;
   ueInfo->bearerCounter = 0;
+  ueInfo->pagingRetransmissions=0;//set the paging retransmissions counter to initial value
 }
 
 uint8_t
@@ -144,6 +160,10 @@ EpcMme::DoInitialUeMessage (uint64_t mmeUeS1Id, uint16_t enbUeS1Id, uint64_t ims
       bearerContext.tft = bit->tft;
       msg.bearerContextsToBeCreated.push_back (bearerContext);
     }
+  if (it->second->m_t3413Timeout.IsRunning ()) //stop paging timer when MME receives initial UE msg 
+  {
+    it->second->m_t3413Timeout.Cancel ();//paging successful
+  }
   m_s11SapSgw->CreateSessionRequest (msg);
 }
 
@@ -262,25 +282,106 @@ EpcMme::DoDeleteBearerRequest (EpcS11SapMme::DeleteBearerRequestMessage msg)
       bearerContext.epsBearerId = bit->epsBearerId;
       res.bearerContextsRemoved.push_back (bearerContext);
 
-      RemoveBearer (it->second, bearerContext.epsBearerId); //schedules function to erase, context of de-activated bearer
+      /*
+       * this condition is added to not remove bearer info at MME
+       * when UE gets disconnected since the bearers are only added
+       * at beginning of simulation at MME and if it is removed the
+       * bearers cannot be activated again unless scheduled for
+       * addition of the bearer during simulation
+       * 
+       */
+      if (it->second->cellId == 0)
+        {
+          RemoveBearer (it->second, bearerContext.epsBearerId); //schedules function to erase, context of de-activated bearer
+        }
     }
+  it->second->pagingRetransmissions = 0;//reset the counter to zero when bearers are removed 
   //schedules Delete Bearer Response towards epc-sgw-pgw-application
   m_s11SapSgw->DeleteBearerResponse (res);
 }
 
-void EpcMme::RemoveBearer (Ptr<UeInfo> ueInfo, uint8_t epsBearerId)
+void
+EpcMme::RemoveBearer (Ptr<UeInfo> ueInfo, uint8_t epsBearerId)
 {
-  NS_LOG_FUNCTION (this << epsBearerId);
+  NS_LOG_FUNCTION(this << epsBearerId);
+
   for (std::list<BearerInfo>::iterator bit = ueInfo->bearersToBeActivated.begin ();
-       bit != ueInfo->bearersToBeActivated.end ();
-       ++bit)
+      bit != ueInfo->bearersToBeActivated.end (); ++bit)
     {
       if (bit->bearerId == epsBearerId)
         {
           ueInfo->bearersToBeActivated.erase (bit);
+          ueInfo->bearerCounter = ueInfo->bearerCounter - 1; 
           break;
         }
     }
+}
+
+void
+EpcMme::DoDownlinkDataNotification (EpcS11SapMme::DownlinkDataNotificationMessage msg)
+{
+  NS_LOG_FUNCTION(this << msg.imsi);
+  EpcS1apSapEnb::S1apPagingMessage pmsg;
+  pmsg.uePagingId = msg.imsi;
+  pmsg.cnDomain = EpcS1apSapEnb::S1apPagingMessage::PS;
+  pmsg.ueIdentityIndexValue= msg.imsi%1024; //UE_ID: IMSI mod 1024
+  NS_LOG_INFO("paging to UE with imsi: "<<msg.imsi);
+  NS_LOG_INFO("ueIdentityIndexValue: "<<pmsg.ueIdentityIndexValue);
+  for (std::vector<uint16_t>::iterator pit = m_enbList.begin ();
+       pit != m_enbList.end (); ++pit)
+    {
+      std::map<uint16_t, Ptr<EnbInfo> >::iterator jt = m_enbInfoMap.find (*pit);
+      NS_ASSERT_MSG(jt != m_enbInfoMap.end (), "could not find any eNB with CellId " << *pit);
+      std::map<uint64_t, Ptr<UeInfo> >::iterator it = m_ueInfoMap.find (pmsg.uePagingId);
+      NS_ASSERT_MSG(it != m_ueInfoMap.end (), "could not find any UE with IMSI " << pmsg.uePagingId);
+      jt->second->s1apSapEnb->RecvS1apPagingMessage (pmsg);
+    }
+  std::map<uint64_t, Ptr<UeInfo> >::iterator it = m_ueInfoMap.find (pmsg.uePagingId);
+  it->second->m_t3413Timeout = Simulator::Schedule (m_t3413, &EpcMme::RetransmitPagingMsg, this, it->second, pmsg);
+  it->second->pagingRetransmissions++;
+  NS_LOG_INFO("No of times paging timer started: "<<it->second->pagingRetransmissions);
+}
+
+void
+EpcMme::RetransmitPagingMsg (Ptr<UeInfo> ueinfo, EpcS1apSapEnb::S1apPagingMessage pmsg)
+{
+  NS_LOG_FUNCTION(this);
+  if (ueinfo->pagingRetransmissions >= 1 && ueinfo->pagingRetransmissions <= 4)
+    {
+      for (std::vector<uint16_t>::iterator pit = m_enbList.begin ();
+          pit != m_enbList.end (); ++pit)
+        {
+          std::map<uint16_t, Ptr<EnbInfo> >::iterator jt = m_enbInfoMap.find (*pit);
+          NS_ASSERT_MSG(jt != m_enbInfoMap.end (), "could not find any eNB with CellId " << *pit);
+          jt->second->s1apSapEnb->RecvS1apPagingMessage (pmsg);
+        }
+
+      ueinfo->m_t3413Timeout = Simulator::Schedule (m_t3413, &EpcMme::RetransmitPagingMsg, this, ueinfo, pmsg);
+      ueinfo->pagingRetransmissions++;
+      if (ueinfo->m_t3413Timeout.IsRunning ())
+        {
+          NS_LOG_INFO("No of times paging timer started: "<<ueinfo->pagingRetransmissions);
+        }
+
+    }
+  else
+    {
+      NS_LOG_WARN("Unable to page UE");
+      /**
+       * if max paging attempts is reached, paging is considered
+       * to have failed and the buffered downlink packets are discarded
+       */
+      m_s11SapSgw->DiscardBufferedDlPackets (ueinfo->imsi);
+      ueinfo->pagingRetransmissions = 0;
+    }
+}
+
+void
+EpcMme::DoNotifyBearerSetupCompleted (uint64_t imsi)
+{
+  std::map<uint64_t, Ptr<UeInfo> >::iterator it = m_ueInfoMap.find (imsi);
+  if (it->second->pagingRetransmissions != 0)
+    m_s11SapSgw->SendBufferedDlPackets (imsi);
 }
 
 } // namespace ns3

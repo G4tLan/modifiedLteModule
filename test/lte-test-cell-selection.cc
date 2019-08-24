@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 Budiarto Herman
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Budiarto Herman <budiarto.herman@magister.fi>
  *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for  UE transition to CONNECTED state after 
+ *      cell selection)
  */
 
 #include "lte-test-cell-selection.h"
@@ -42,6 +46,7 @@
 #include <ns3/lte-ue-net-device.h>
 #include <ns3/lte-ue-rrc.h>
 #include <ns3/lte-enb-net-device.h>
+#include <ns3/applications-module.h>
 
 using namespace ns3;
 
@@ -63,17 +68,17 @@ LteCellSelectionTestSuite::LteCellSelectionTestSuite ()
   //                                                x     y    csgMember
   //                                                checkPoint     cell1, cell2
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.0, 0.55, false,
-                                                    MilliSeconds (283), 1, 0));
+                                                    MilliSeconds (296), 1, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.0, 0.45, false,
-                                                    MilliSeconds (283), 1, 0));
+                                                    MilliSeconds (296), 1, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.5, 0.45, false,
-                                                    MilliSeconds (363), 1, 3));
+                                                    MilliSeconds (376), 1, 3));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.5, 0.0,  true,
-                                                    MilliSeconds (283), 2, 4));
+                                                    MilliSeconds (296), 2, 4));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (1.0, 0.55, true,
-                                                    MilliSeconds (283), 3, 0));
+                                                    MilliSeconds (296), 3, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (1.0, 0.45, true,
-                                                    MilliSeconds (283), 4, 0));
+                                                    MilliSeconds (296), 4, 0));
 
   AddTestCase (new LteCellSelectionTestCase ("EPC, real RRC, RngNum=1",
                                              true, false, 60.0, w, 1),
@@ -86,17 +91,17 @@ LteCellSelectionTestSuite::LteCellSelectionTestSuite ()
   //                                                x     y    csgMember
   //                                                checkPoint     cell1, cell2
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.0, 0.55, false,
-                                                    MilliSeconds (266), 1, 0));
+                                                    MilliSeconds (276), 1, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.0, 0.45, false,
-                                                    MilliSeconds (266), 1, 0));
+                                                    MilliSeconds (276), 1, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.5, 0.45, false,
-                                                    MilliSeconds (346), 1, 3));
+                                                    MilliSeconds (356), 1, 3));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (0.5, 0.0,  true,
-                                                    MilliSeconds (266), 2, 4));
+                                                    MilliSeconds (276), 2, 4));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (1.0, 0.55, true,
-                                                    MilliSeconds (266), 3, 0));
+                                                    MilliSeconds (276), 3, 0));
   w.push_back (LteCellSelectionTestCase::UeSetup_t (1.0, 0.45, true,
-                                                    MilliSeconds (266), 4, 0));
+                                                    MilliSeconds (276), 4, 0));
 
   AddTestCase (new LteCellSelectionTestCase ("EPC, ideal RRC, RngNum=1",
                                              true, true, 60.0, w, 1),
@@ -160,6 +165,15 @@ LteCellSelectionTestCase::DoRun ()
   lteHelper->SetAttribute ("PathlossModel",
                            StringValue ("ns3::FriisSpectrumPropagationLossModel"));
   lteHelper->SetAttribute ("UseIdealRrc", BooleanValue (m_isIdealRrc));
+  //Use real RRC protocol for realistic RACH model
+  if (!m_isIdealRrc)
+    {
+      lteHelper->SetAttribute ("UseIdealPrach", BooleanValue (false));
+    }
+  else//Realistic RACH model is activated by setting the below attribute
+    {
+      lteHelper->SetAttribute ("UseIdealPrach", BooleanValue (true));
+    }
 
   Ptr<PointToPointEpcHelper> epcHelper;
 
@@ -304,6 +318,7 @@ LteCellSelectionTestCase::DoRun ()
       Ipv4AddressHelper ipv4h;
       ipv4h.SetBase ("1.0.0.0", "255.0.0.0");
       Ipv4InterfaceContainer internetIpIfaces = ipv4h.Assign (internetDevices);
+      Ipv4Address remoteHostAddr = internetIpIfaces.GetAddress (1);
 
       // Routing of the Internet Host (towards the LTE network)
       Ipv4StaticRoutingHelper ipv4RoutingHelper;
@@ -315,13 +330,53 @@ LteCellSelectionTestCase::DoRun ()
       Ipv4InterfaceContainer ueIpIfaces;
       ueIpIfaces = epcHelper->AssignUeIpv4Address (NetDeviceContainer (ueDevs));
 
-      // Assign IP address to UEs
+      // Enable Idle mode cell selection
+      lteHelper->Attach (ueDevs);
+
+      // Install and start applications on UEs and remote host
+      uint16_t ulPort = 20000;
+      Ptr<UniformRandomVariable> startTimeSeconds = CreateObject<
+          UniformRandomVariable> ();
+      startTimeSeconds->SetAttribute ("Min", DoubleValue (0));
+      startTimeSeconds->SetAttribute ("Max", DoubleValue (0.010));
+      double interPacketInterval = 1000;
+
       for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
         {
+          // Assign IP address to UEs
           Ptr<Node> ueNode = ueNodes.Get (u);
           // Set the default gateway for the UE
           Ptr<Ipv4StaticRouting> ueStaticRouting = ipv4RoutingHelper.GetStaticRouting (ueNode->GetObject<Ipv4> ());
           ueStaticRouting->SetDefaultRoute (epcHelper->GetUeDefaultGatewayAddress (), 1);
+
+          for (uint32_t b = 0; b < 1; ++b)
+            {
+              ApplicationContainer ulClientApps;
+              ApplicationContainer ulServerApps;
+
+              ++ulPort;
+
+              NS_LOG_LOGIC("installing UDP UL app for UE " << u+1);
+              UdpClientHelper ulClientHelper (remoteHostAddr, ulPort);
+              ulClientHelper.SetAttribute ("Interval", TimeValue (MilliSeconds (interPacketInterval)));
+              ulClientHelper.SetAttribute ("MaxPackets", UintegerValue (1000000));
+              ulClientApps.Add (ulClientHelper.Install (ueNode));
+
+              PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
+              ulServerApps.Add (ulPacketSinkHelper.Install (remoteHost));
+
+              Ptr<EpcTft> tft = Create<EpcTft> ();
+              EpcTft::PacketFilter ulpf;
+              ulpf.remotePortStart = ulPort;
+              ulpf.remotePortEnd = ulPort;
+              tft->Add (ulpf);
+              EpsBearer bearer (EpsBearer::NGBR_IMS);
+              lteHelper->ActivateDedicatedEpsBearer (ueDevs.Get (u), bearer, tft);
+
+              //UEs go to CONNECTED state on uplink data arrival
+              ulServerApps.Start (Seconds (0.25));
+              ulClientApps.Start (Seconds (0.25));
+            } // end for b
         }
 
     } // end of if (m_isEpcMode)
@@ -343,9 +398,6 @@ LteCellSelectionTestCase::DoRun ()
   Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
                    MakeCallback (&LteCellSelectionTestCase::ConnectionEstablishedCallback,
                                  this));
-
-  // Enable Idle mode cell selection
-  lteHelper->Attach (ueDevs);
 
   // Run simulation
   Simulator::Stop (lastCheckPoint);

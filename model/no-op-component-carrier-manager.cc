@@ -210,6 +210,23 @@ NoOpComponentCarrierManager::DoRemoveUe (uint16_t rnti)
   NS_ASSERT_MSG (stateIt != m_ueState.end (), "request to remove UE info with unknown rnti ");
   NS_ASSERT_MSG (eccIt != m_enabledComponentCarrier.end (), "request to remove UE info with unknown rnti ");
 
+  /**
+   * Erase the UeInfo of the UE in the respective maps when the UE context is removed at eNodeB.
+   * This ensures no unwanted errors or assert messages are triggered when the UE context of an UE
+   * represented by its RNTI is removed or when the freed RNTI is reused later by another UE
+   * 
+   */
+  std::map <uint16_t, std::map<uint8_t, LteMacSapUser*> >::iterator sapIt;
+  std::map <uint16_t, std::map<uint8_t, LteEnbCmacSapProvider::LcInfo> >::iterator rntiIt;
+  sapIt =  m_ueAttached.find (rnti);
+  rntiIt = m_rlcLcInstantiated.find (rnti);
+  NS_ASSERT_MSG (sapIt != m_ueAttached.end (), "request to remove UE info with unknown rnti ");
+  NS_ASSERT_MSG (rntiIt != m_rlcLcInstantiated.end (), "request to remove UE info with unknown rnti ");
+  m_ueState.erase(rnti);
+  m_enabledComponentCarrier.erase(rnti);
+  m_ueAttached.erase(rnti);
+  m_rlcLcInstantiated.erase(rnti);
+
 }
 
 std::vector<LteCcmRrcSapProvider::LcsConfig>

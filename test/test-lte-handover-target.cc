@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 Budiarto Herman
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Budiarto Herman <budiarto.herman@magister.fi>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  *
  */
 
@@ -47,6 +53,8 @@
 #include <ns3/position-allocator.h>
 #include <ns3/lte-enb-net-device.h>
 #include <ns3/lte-enb-phy.h>
+#include <ns3/lte-ue-net-device.h>
+#include <ns3/lte-ue-rrc.h>
 
 using namespace ns3;
 
@@ -356,6 +364,18 @@ LteHandoverTargetTestCase::DoRun ()
 
   // Attach UE to the source eNodeB
   lteHelper->Attach (ueDevs.Get (0), sourceEnb);
+
+  /**
+   * Since the connection procedure is not automatically triggered
+   * as there are no applications installed on the UE or the remote host,
+   * manually set the m_connectionPending flag for the UE so that
+   * it can transition to RRC CONNECTED state
+   */
+  for (uint32_t i = 0; i < ueDevs.GetN (); i++)
+    {
+      Ptr<NetDevice> ueDev = ueDevs.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
 
   // Schedule a "shutdown" of the source eNodeB
   Simulator::Schedule (Seconds (0.5),

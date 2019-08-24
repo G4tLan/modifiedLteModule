@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #ifndef LTE_MAC_SAP_H
@@ -126,6 +130,16 @@ public:
    * \param lcid the LCID
    */
   virtual void ReceivePdu (Ptr<Packet> p, uint16_t rnti, uint8_t lcid) = 0;
+
+  /**
+   * Called by the MAC to notify the RLC that the scheduler granted a
+   * transmission opportunity for message 3 of RACH procedure
+   *  
+   *
+   * \param bytes the number of bytes to transmit
+   * \param layer the layer of transmission (MIMO)
+   */
+  // virtual void SendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId) = 0;
 
 };
 

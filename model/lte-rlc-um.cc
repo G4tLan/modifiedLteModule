@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Handover Failure;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #include "ns3/simulator.h"
@@ -122,6 +132,13 @@ LteRlcUm::DoTransmitPdcpPdu (Ptr<Packet> p)
 /**
  * MAC SAP
  */
+/*
+void
+LteRlcUm::DoSendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId)
+{
+  NS_ASSERT_MSG(false, "It is not possible to send RACH message 3 through UM rlc");
+}
+*/
 
 void
 LteRlcUm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, uint8_t componentCarrierId, uint16_t rnti, uint8_t lcid)
@@ -1187,12 +1204,13 @@ LteRlcUm::ExpireReorderingTimer (void)
 void
 LteRlcUm::ExpireRbsTimer (void)
 {
+	 NS_LOG_FUNCTION (this);
   NS_LOG_LOGIC ("RBS Timer expires");
 
   if (! m_txBuffer.empty ())
-    {
-      DoReportBufferStatus ();
+    {     
       m_rbsTimer = Simulator::Schedule (MilliSeconds (10), &LteRlcUm::ExpireRbsTimer, this);
+      DoReportBufferStatus ();//method executed after scheduling above event to cancel event during UE context deletion at eNodeB 
     }
 }
 

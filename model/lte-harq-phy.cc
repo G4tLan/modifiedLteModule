@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo  <marco.miozzo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *        (support for uplink synchronization)
  */
 
 
@@ -216,7 +220,18 @@ LteHarqPhy::ResetUlHarqProcessStatus (uint16_t rnti, uint8_t id)
     }
 }
 
-
+void
+LteHarqPhy::ClearDlHarqProcesses(uint16_t rnti)
+{
+	//flush dl harq buffers
+	m_miDlHarqProcessesInfoMap.clear();
+		std::vector<HarqProcessInfoList_t> dlHarqLayer0;
+		dlHarqLayer0.resize(8);
+		std::vector<HarqProcessInfoList_t> dlHarqLayer1;
+		dlHarqLayer1.resize(8);
+		m_miDlHarqProcessesInfoMap.push_back(dlHarqLayer0);
+		m_miDlHarqProcessesInfoMap.push_back(dlHarqLayer1);
+}
 
 
 } // end namespace

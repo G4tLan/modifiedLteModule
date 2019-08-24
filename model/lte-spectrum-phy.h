@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,6 +20,14 @@
  * Author: Nicola Baldo <nbaldo@cttc.es>
  *         Giuseppe Piro  <g.piro@poliba.it>
  * Modified by: Marco Miozzo <mmiozzo@cttc.es> (introduce physical error model)
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #ifndef LTE_SPECTRUM_PHY_H
@@ -41,6 +51,7 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/lte-harq-phy.h>
 #include <ns3/lte-common.h>
+#include <ns3/lte-interference-multiple-rx.h>
 
 namespace ns3 {
 
@@ -87,8 +98,18 @@ class LteNetDevice;
 class AntennaModel;
 class LteControlMessage;
 struct LteSpectrumSignalParametersDataFrame;
+struct LteSpectrumSignalParametersPrachFrame;
 struct LteSpectrumSignalParametersDlCtrlFrame;
 struct LteSpectrumSignalParametersUlSrsFrame;
+
+
+/**
+* this method is invoked by the LteSpectrumPhy to notify the PHY that the
+* transmission of a given packet has been completed.
+*
+* @param packet the Packet whose TX has been completed.
+*/
+typedef Callback< void, Ptr<const Packet> > LtePhyTxEndCallback;
 
 /**
 * This method is used by the LteSpectrumPhy to notify the PHY that a
@@ -115,10 +136,28 @@ typedef Callback< void, std::list<Ptr<LteControlMessage> > > LtePhyRxCtrlEndOkCa
 
 /**
 * This method is used by the LteSpectrumPhy to notify the PHY that a
+* previously started RX of a PRACH frame attempt has been 
+* successfully completed.
+* 
+*
+* @param packet the received Packet
+*/
+typedef Callback< void, std::list<Ptr<LteControlMessage> > > LtePhyRxPrachEndOkCallback;
+
+/**
+* This method is used by the LteSpectrumPhy to notify the PHY that a
 * previously started RX of a control frame attempt has terminated 
 * without success.
 */
 typedef Callback< void > LtePhyRxCtrlEndErrorCallback;
+
+/**
+* This method is used by the LteSpectrumPhy to notify the PHY that a
+* previously started RX of a PRACH frame attempt has terminated 
+* without success.
+* 
+*/
+typedef Callback< void, std::list<Ptr<LteControlMessage> > > LtePhyRxPrachEndErrorCallback;
 
 /**
 * This method is used by the LteSpectrumPhy to notify the UE PHY that a
@@ -162,7 +201,7 @@ public:
    */
   enum State
   {
-    IDLE, TX_DL_CTRL, TX_DATA, TX_UL_SRS, RX_DL_CTRL, RX_DATA, RX_UL_SRS
+    IDLE, TX_DL_CTRL, TX_RACH, TX_DATA, TX_UL_SRS, RX_DL_CTRL, RX_RACH, RX_DATA, RX_UL_SRS
   };
 
   /**
@@ -187,6 +226,7 @@ public:
    * \param params Ptr<LteSpectrumSignalParametersDataFrame>
    */
   void StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params);
+  void StartRxPrach  (Ptr<LteSpectrumSignalParametersPrachFrame> ltePrachRxParams);
   /**
    * \brief Start receive DL control function
    * \param lteDlCtrlRxParams Ptr<LteSpectrumSignalParametersDlCtrlFrame>
@@ -203,6 +243,8 @@ public:
    */
   void SetHarqPhyModule (Ptr<LteHarqPhy> harq);
 
+  Ptr<LteHarqPhy> GetHarqPhyModule ();
+
   /**
    * set the Power Spectral Density of outgoing signals in W/Hz.
    *
@@ -217,6 +259,8 @@ public:
    */
   void SetNoisePowerSpectralDensity (Ptr<const SpectrumValue> noisePsd);
 
+  void SetRxSpectrumModel (Ptr<const SpectrumModel> rxSpectrumModel);
+
   /** 
    * reset the internal state
    * 
@@ -229,6 +273,20 @@ public:
    * \param a the Antenna Model
    */
   void SetAntenna (Ptr<AntennaModel> a);
+
+
+  /**
+  * Start a transmission of msg3 in UL
+  * 
+  *
+  * @param pb the burst of packets to be transmitted in PUSCH
+  * @param ctrlMsgList the list of LteControlMessage to send
+  * @param duration the duration of the data frame 
+  *
+  * @return true if an error occurred and the transmission was not
+  * started, false otherwise.
+  */
+  bool StartTxMsg3Frame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration);
   
   /**
   * Start a transmission of data frame in DL and UL
@@ -242,6 +300,18 @@ public:
   * started, false otherwise.
   */
   bool StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration);
+
+  /**
+  * Start a transmission of prach frame in UL
+  * 
+  *
+  * @param rachPreamble the list of LteControlMessage to send (actually just one)
+  * @param duration the duration of the data frame 
+  *
+  * @return true if an error occurred and the transmission was not
+  * started, false otherwise.
+  */
+  bool StartTxPrachFrame (std::list<Ptr<LteControlMessage> > prachMsgList, Time duration);
   
   /**
   * Start a transmission of control frame in DL
@@ -263,6 +333,15 @@ public:
   * started, false otherwise.
   */
   bool StartTxUlSrsFrame ();
+
+
+  /**
+   * set the callback for the end of a TX, as part of the
+   * interconnections between the PHY and the MAC
+   *
+   * @param c the callback
+   */
+  void SetLtePhyTxEndCallback (LtePhyTxEndCallback c);
 
   /**
    * set the callback for the end of a RX in error, as part of the
@@ -287,6 +366,15 @@ public:
   * @param c the callback
   */
   void SetLtePhyRxCtrlEndOkCallback (LtePhyRxCtrlEndOkCallback c);
+
+  /**
+  * set the callback for the successful end of a RX PRACH frame, as part 
+  * of the interconnections between the LteSpectrumPhy and the PHY.
+  * 
+  *
+  * @param c the callback
+  */
+  void SetLtePhyRxPrachEndOkCallback (LtePhyRxPrachEndOkCallback c);
   
   /**
   * set the callback for the erroneous end of a RX ctrl frame, as part 
@@ -295,6 +383,15 @@ public:
   * @param c the callback
   */
   void SetLtePhyRxCtrlEndErrorCallback (LtePhyRxCtrlEndErrorCallback c);
+
+   /**
+  * set the callback for the erroneous end of a RX PRACH frame, as part 
+  * of the interconnections between the LteSpectrumPhy and the PHY.
+  * 
+  *
+  * @param c the callback
+  */
+  void SetLtePhyRxPrachEndErrorCallback (LtePhyRxPrachEndErrorCallback c);
 
   /**
   * set the callback for the reception of the PSS as part
@@ -346,6 +443,14 @@ public:
   *          processing chain
   */
   void AddRsPowerChunkProcessor (Ptr<LteChunkProcessor> p);
+
+  /**
+  * 
+  *
+  * \param p the new LteChunkProcessor to be added to the PRACH power
+  *          processing chain
+  */
+  void AddPrachPowerChunkProcessor (Ptr<LteChunkProcessorMultiple> p);
   
   /**
   *
@@ -372,6 +477,15 @@ public:
 
   /**
   *  LteChunkProcessor devoted to evaluate interference + noise power
+  *  in prach subframes
+  * 
+  *
+  * \param p the new LteChunkProcessor to be added to the data processing chain
+  */
+  void AddInterferencePrachChunkProcessor (Ptr<LteChunkProcessorMultiple> p);
+
+  /**
+  *  LteChunkProcessor devoted to evaluate interference + noise power
   *  in data symbols of the subframe
   *
   * \param p the new LteChunkProcessor to be added to the data processing chain
@@ -385,6 +499,13 @@ public:
   * \param p the new LteChunkProcessor to be added to the ctrl processing chain
   */
   void AddCtrlSinrChunkProcessor (Ptr<LteChunkProcessor> p);
+
+  /** 
+  * 
+  * 
+  * \param p the new LteChunkProcessor to be added to the ctrl processing chain
+  */
+  void AddPrachSinrChunkProcessor (Ptr<LteChunkProcessorMultiple> p);
   
   /** 
   * 
@@ -401,6 +522,15 @@ public:
   */
   void AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t layer, uint8_t harqId, uint8_t rv, bool downlink);
 
+  /**
+   * When ue context at eNodeB is removed and if UL TB is expected to be received
+   * but not transmitted due to break in radio link. The TB with different rnti or lcid
+   * remains during the transmission of a new TB and causes problems with
+   * m_ulPhyReception trace, since the UE context was already removed. TB has to be
+   * removed when ue context at eNodeB is removed
+   * 
+   */
+  void RemoveExpectedTb (uint16_t  rnti);
 
   /** 
   * 
@@ -408,6 +538,14 @@ public:
   * \param sinr vector of sinr perceived per each RB
   */
   void UpdateSinrPerceived (const SpectrumValue& sinr);
+
+  /** 
+  * 
+  * 
+  * \param sinr vector of sinr perceived per each RB
+  * \param signalId
+  */
+  void UpdateSinrPerceivedMultiple (const SpectrumValue& sinr, uint32_t signalId);
   
   /** 
   * 
@@ -445,12 +583,14 @@ private:
   void ChangeState (State newState);
   /// End transmit data function
   void EndTxData ();
+  void EndTxPrach ();
   /// End transmit DL control function
   void EndTxDlCtrl ();
   /// End transmit UL SRS function
   void EndTxUlSrs ();
   /// End receive data function
   void EndRxData ();
+  void EndRxPrach (uint32_t numPrachAccess);
   /// End receive DL control function
   void EndRxDlCtrl ();
   /// End receive UL SRS function
@@ -463,6 +603,8 @@ private:
   * \param gain the gain to set
   */
   void SetTxModeGain (uint8_t txMode, double gain);
+
+  Vector SubtractVectors(Vector a, Vector b);
   
 
   Ptr<MobilityModel> m_mobility; ///< the modility model
@@ -478,8 +620,10 @@ private:
   
   std::list<Ptr<LteControlMessage> > m_txControlMessageList; ///< the transmit control message list
   std::list<Ptr<LteControlMessage> > m_rxControlMessageList; ///< the receive control message list
+   // use a map since there is no guarantee in the order of rx events
+  std::map< uint32_t, Ptr<LteControlMessage> > m_rxpRachMessageList;
   
-  
+  bool m_msg3;
   State m_state; ///< the state
   Time m_firstRxStart; ///< the first receive start
   Time m_firstRxDuration; ///< the first receive duration
@@ -489,28 +633,35 @@ private:
   TracedCallback<Ptr<const PacketBurst> > m_phyRxStartTrace; ///< the phy receive start trace callback
   TracedCallback<Ptr<const Packet> >      m_phyRxEndOkTrace; ///< the phy receive end ok trace callback
   TracedCallback<Ptr<const Packet> >      m_phyRxEndErrorTrace; ///< the phy receive end error trace callback
+  TracedCallback<Ptr<const Packet> >      m_phyRxMsg3EndErrorTrace;
 
   LtePhyRxDataEndErrorCallback   m_ltePhyRxDataEndErrorCallback; ///< the LTE phy receive data end error callback 
   LtePhyRxDataEndOkCallback      m_ltePhyRxDataEndOkCallback; ///< the LTE phy receive data end ok callback
   
   LtePhyRxCtrlEndOkCallback     m_ltePhyRxCtrlEndOkCallback; ///< the LTE phy receive control end ok callback
+  LtePhyRxPrachEndOkCallback    m_ltePhyRxPrachEndOkCallback; 
   LtePhyRxCtrlEndErrorCallback  m_ltePhyRxCtrlEndErrorCallback; ///< the LTE phy receive control end error callback
+  LtePhyRxPrachEndErrorCallback m_ltePhyRxPrachEndErrorCallback; 
   LtePhyRxPssCallback  m_ltePhyRxPssCallback; ///< the LTE phy receive PSS callback
 
   Ptr<LteInterference> m_interferenceData; ///< the data interference
   Ptr<LteInterference> m_interferenceCtrl; ///< the control interference
+  Ptr<LteInterferenceMultipleRx> m_interferencePrach;
 
   uint16_t m_cellId; ///< the cell ID
-  
+  uint32_t m_numPrachAccess;
+
   uint8_t m_componentCarrierId; ///< the component carrier ID
   expectedTbs_t m_expectedTbs; ///< the expected TBS
   SpectrumValue m_sinrPerceived; ///< the preceived SINR 
+  std::map<uint32_t, Ptr<SpectrumValue> > m_sinrPerceivedMap;
 
   /// Provides uniform random variables.
   Ptr<UniformRandomVariable> m_random;
   bool m_dataErrorModelEnabled; ///< when true (default) the phy error model is enabled
   bool m_ctrlErrorModelEnabled; ///< when true (default) the phy error model is enabled for DL ctrl frame
-  
+  bool m_pRachErrorModelEnabled; // when true (default) the phy error model is enabled for rach preamble
+ 
   uint8_t m_transmissionMode; ///< for UEs: store the transmission mode
   uint8_t m_layersNum; ///< layers num
   std::vector <double> m_txModeGain; ///< duplicate value of LteUePhy
@@ -526,7 +677,13 @@ private:
    */
   TracedCallback<PhyReceptionStatParameters> m_dlPhyReception;
 
-  
+  /**
+   * Trace information regarding PHY stats from PRACH Rx perspective
+   * PhyReceptionStatParameters (see lte-common.h)
+   * 
+   */
+  TracedCallback<PhyReceptionStatParameters> m_prachPhyReception;
+
   /**
    * Trace information regarding PHY stats from UL Rx perspective
    * PhyReceptionStatParameters (see lte-common.h)
@@ -537,7 +694,7 @@ private:
   EventId m_endRxDataEvent; ///< end receive data event
   EventId m_endRxDlCtrlEvent; ///< end receive DL control event
   EventId m_endRxUlSrsEvent; ///< end receive UL SRS event
-  
+  EventId m_endRxPrachEvent;
 
 };
 

@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011,2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Handover Failure;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #include "ns3/simulator.h"
@@ -24,6 +34,9 @@
 
 #include "ns3/lte-rlc-tm.h"
 #include "ns3/lte-rlc-tag.h"
+
+#include <ns3/random-variable-stream.h>
+
 
 namespace ns3 {
 
@@ -36,6 +49,8 @@ LteRlcTm::LteRlcTm ()
     m_txBufferSize (0)
 {
   NS_LOG_FUNCTION (this);
+  m_randomTmsi = CreateObject<UniformRandomVariable> ();
+
 }
 
 LteRlcTm::~LteRlcTm ()
@@ -109,6 +124,50 @@ LteRlcTm::DoTransmitPdcpPdu (Ptr<Packet> p)
 /**
  * MAC SAP
  */
+
+/*
+void
+LteRlcTm::DoSendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId)
+{
+  //NS_ASSERT_MSG(false, "It is not possible to send RACH message 3 through TM rlc");
+
+  NS_LOG_FUNCTION (this << m_rnti << (uint32_t) m_lcid << bytes  << (uint32_t) layer << (uint32_t) harqId);
+
+  uint32_t size = bytes; // TODO check this size
+  Ptr<Packet> packet = Create<Packet> (size);
+
+  if (bytes < packet->GetSize ())
+    {
+      return;
+    }
+ 
+  // Message 3 tag
+  // It has to contain the tmsi selected randomly
+  m_tmsi = m_randomTmsi->GetInteger (0, 2^40);
+  Message3Tag tag (m_tmsi);
+  packet->AddByteTag (tag);
+
+
+
+  // Send RLC PDU to MAC layer
+  LteMacSapProvider::TransmitPduParameters params;
+  params.pdu = packet;
+  params.rnti = m_rnti;
+  params.lcid = m_lcid;
+  params.layer = layer;
+  params.harqProcessId = harqId;
+
+  m_macSapProvider->TransmitPdu (params);
+
+  if (! m_txBuffer.empty ())
+    {
+      m_rbsTimer.Cancel ();
+      m_rbsTimer = Simulator::Schedule (MilliSeconds (10), &LteRlcTm::ExpireRbsTimer, this);
+    }
+  // NS_ASSERT_MSG(false, "It is not possible to send RACH message 3 through TM rlc");
+
+}
+*/
 
 void
 LteRlcTm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, uint8_t componentCarrierId, uint16_t rnti, uint8_t lcid)
@@ -225,8 +284,8 @@ LteRlcTm::ExpireRbsTimer (void)
 
   if (! m_txBuffer.empty ())
     {
-      DoReportBufferStatus ();
       m_rbsTimer = Simulator::Schedule (MilliSeconds (10), &LteRlcTm::ExpireRbsTimer, this);
+      DoReportBufferStatus ();//method executed after scheduling above event to cancel event during UE context deletion at eNodeB 
     }
 }
 

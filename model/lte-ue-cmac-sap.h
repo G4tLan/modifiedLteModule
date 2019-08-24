@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model
+ *    (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 #ifndef LTE_UE_CMAC_SAP_H
@@ -25,6 +35,7 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/lte-common.h>
+#include <ns3/nstime.h>
 
 namespace ns3 {
 
@@ -48,6 +59,14 @@ public:
     uint8_t numberOfRaPreambles; ///< number of RA preambles
     uint8_t preambleTransMax; ///< preamble transmit maximum
     uint8_t raResponseWindowSize; ///< RA response window size
+
+    
+    // the following is transmitted with sib2 to 
+    //advertise which is the configuration index of the prach
+    uint8_t pRachConfigurationIndex;
+    int8_t powerRampingStep;
+    int8_t preambleInitialReceivedTargetPower;
+    uint8_t contentionResolutionTimer;
   };
   
   /** 
@@ -111,6 +130,26 @@ public:
    * \param rnti the cell-specific UE identifier
    */
   virtual void SetRnti (uint16_t rnti) = 0;
+ 
+   /** 
+   * notify that msg3 timer has expired and reset the mac
+   * 
+   */
+  virtual void NotifyConnectionExpired () = 0;
+
+  /** 
+   * notify that msg4 has been recvd
+   * 
+   */
+  virtual void NotifyConnectionSuccessful () = 0;  
+
+  /**
+   * Set the value of Time alignment timer.
+   * Inital value received in SIB2, subsequent values in
+   * TAC MAC CE (TacLteControlMessage)
+   * 
+   */
+  virtual void SetTimeAlignmentTimer (uint16_t timeAlignmentTimerCommon) = 0;
 
 };
 
@@ -138,13 +177,60 @@ public:
    * Notify the RRC that the MAC Random Access procedure completed successfully
    * 
    */
-  virtual void NotifyRandomAccessSuccessful () = 0;
+ // virtual void NotifyRandomAccessSuccessful () = 0;
 
   /** 
    * Notify the RRC that the MAC Random Access procedure failed
    * 
    */
   virtual void NotifyRandomAccessFailed () = 0;
+
+  /** 
+   * Notify the RRC that the MAC has received a RAR
+   * 
+   */
+  virtual void NotifyRarReceived () = 0;
+
+  /** 
+   * Notify the RRC that the MAC has reached timeout for contention resolution
+   * 
+   */
+  virtual void NotifyContentionResolutionTimeout () = 0;
+
+  /**
+   * This method is executed when the time alignment timer
+   * expires at the MAC layer. The UE is considered to be out of sync
+   * only in the RRC CONNECTED_NORMALLY state. If the UE is in any other
+   * state, then the UE is considered to be still uplink time aligned
+   * even though the timer has expired in order to reduce unwanted errors
+   * (such as in case of handover). If UE is out of sync, then the HARQ buffers
+   * are cleared, SRS configuration is released and also uplink grants and downlink
+   * assignments are cleared. No message or data transmission takes place in this
+   * state other than the RACH preamble transmission.
+   * 
+   *
+   * \return true if the UE is considered to be uplink out of sync
+   */
+    virtual bool NotifyTimeAlignmentTimeout () = 0;
+
+    /**
+     * Notify the eNodeB to start the parallel time alignment timer of
+     * the UE identified by its RNTI when RAR or TAC is received by the UE.
+     * This notification is sent in an ideal way through the RRC protocol
+     * to maintain synchronization between the 2 timers.
+     * 
+     *
+     * \param timeAlignmentTimer the duration of the timer
+     * \param rnti the RNTI of the UE whose timer has to be restarted
+     */
+    virtual void NotifyEnbTimeAlignmentTimerToStart (Time timeAlignmentTimer, uint16_t rnti) = 0;
+
+    /**
+     * Receive notification from MAC that
+     * CriLteControlMessage was received
+     * 
+     */
+    virtual void NotifyContentionResolutionMsgReceived()=0;
 };
 
 

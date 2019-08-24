@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Handover Failure;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #include "ns3/simulator.h"
@@ -195,8 +205,17 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
       // Stingy MAC: In general, we need more bytes.
       // There are a more restrictive test for each particular case
       NS_LOG_LOGIC ("TxOpportunity (size = " << bytes << ") too small");
-      NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small.\n"
-                         << "Your MAC scheduler is assigned too few resource blocks.");
+      /**
+       * Assert message is commented and changed to
+       * warning message so that the simulation can be
+       * continued without interruption. The resources are assigned
+       * to the UE when the buffer status is reported to the
+       * scheduler again at a later point of time.
+       */
+      // NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small.\n"
+      //                   << "Your MAC scheduler is assigned too few resource blocks.");
+       NS_LOG_WARN ("TxOpportunity (size = " << bytes << ") too small.\n"
+                           << "Your MAC scheduler is assigned too few resource blocks.");
       return;
     }
 
@@ -206,7 +225,16 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
         {
           // Stingy MAC: We need more bytes for the STATUS PDU
           NS_LOG_LOGIC ("TxOpportunity (size = " << bytes << ") too small for the STATUS PDU (size = " << m_statusPduBufferSize << ")");
-          NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small for the STATUS PDU (size = " << m_statusPduBufferSize << ")\n"
+          /**
+           * Assert message is commented and changed to
+           * warning message so that the simulation can be
+           * continued without interruption. The resources are assigned
+           * to the UE when the buffer status is reported to the
+           * scheduler again at a later point of time.
+           */
+          // NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small for the STATUS PDU (size = " << m_statusPduBufferSize << ")\n"
+          //                   << "Your MAC scheduler is assigned too few resource blocks.");
+           NS_LOG_WARN ("TxOpportunity (size = " << bytes << ") too small for the STATUS PDU (size = " << m_statusPduBufferSize << ")\n"
                              << "Your MAC scheduler is assigned too few resource blocks.");
           return;
         }
@@ -395,7 +423,16 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
       {
         // Stingy MAC: We need more bytes for new DATA PDUs.
         NS_LOG_LOGIC ("TxOpportunity (size = " << bytes << ") too small for DATA PDU");
-        NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small for DATA PDU\n"
+        /**
+         * Assert message is commented and changed to
+         * warning message so that the simulation can be
+         * continued without interruption. The resources are assigned
+         * to the UE when the buffer status is reported to the
+         * scheduler again at a later point of time.
+         */
+        // NS_ASSERT_MSG (false, "TxOpportunity (size = " << bytes << ") too small for DATA PDU\n"
+        //                   << "Your MAC scheduler is assigned too few resource blocks.");
+        NS_LOG_WARN ("TxOpportunity (size = " << bytes << ") too small for DATA PDU\n"
                            << "Your MAC scheduler is assigned too few resource blocks.");
         return;
       }
@@ -746,6 +783,14 @@ LteRlcAm::DoNotifyHarqDeliveryFailure ()
 {
   NS_LOG_FUNCTION (this);
 }
+
+/*
+void
+LteRlcAm::DoSendMessage3Rach (uint32_t bytes, uint8_t layer, uint8_t harqId)
+{
+  NS_ASSERT_MSG(false, "It is not possible to send RACH message 3 through AM rlc");
+}
+*/
 
 
 void
@@ -1722,12 +1767,13 @@ LteRlcAm::ExpireStatusProhibitTimer (void)
 void
 LteRlcAm::ExpireRbsTimer (void)
 {
+  NS_LOG_FUNCTION (this);
   NS_LOG_LOGIC ("RBS Timer expires");
 
   if (m_txonBufferSize + m_txedBufferSize + m_retxBufferSize > 0)
     {
-      DoReportBufferStatus ();
       m_rbsTimer = Simulator::Schedule (m_rbsTimerValue, &LteRlcAm::ExpireRbsTimer, this);
+      DoReportBufferStatus ();//method executed after scheduling above event to cancel event during UE context deletion at eNodeB 
     }
 }
 

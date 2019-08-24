@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for handover failure)
  */
 
 #ifndef EPC_X2_SAP_H
@@ -333,6 +336,20 @@ public:
     Ptr<Packet> ueData; ///< UE data
   };
 
+  /**
+   * \brief Parameters of the HANDOVER CANCEL message.
+   *
+   * See section 9.1.1.6 for further info about the parameters
+   * 
+   */
+  struct HandoverCancelParams
+  {
+    uint16_t            oldEnbUeX2apId; ///< old ENB UE X2 AP ID
+    uint16_t            newEnbUeX2apId; ///< new ENB UE X2 AP ID
+    uint16_t            sourceCellId; ///< source cell ID
+    uint16_t            targetCellId; ///< target cell ID
+    uint16_t            cause; ///< cause
+  };
 };
 
 
@@ -396,6 +413,8 @@ public:
    * \param params the UE data parameters
    */
   virtual void SendUeData (UeDataParams params) = 0;
+
+  virtual void SendHandoverCancel (HandoverCancelParams params) = 0;
 };
 
 
@@ -459,6 +478,13 @@ public:
    * \param params UE data parameters
    */
   virtual void RecvUeData (UeDataParams params) = 0;
+
+  /**
+   * Receive handover cancel function
+   * \param params the receive handover cancel parameters
+   * 
+   */
+  virtual void RecvHandoverCancel (HandoverCancelParams params) = 0;
 };
 
 ///////////////////////////////////////
@@ -528,6 +554,8 @@ public:
    * \param params the UE data parameters
    */
   virtual void SendUeData (UeDataParams params);
+
+  virtual void SendHandoverCancel (HandoverCancelParams params);
 
 private:
   EpcX2SpecificEpcX2SapProvider ();
@@ -601,6 +629,13 @@ EpcX2SpecificEpcX2SapProvider<C>::SendUeData (UeDataParams params)
   m_x2->DoSendUeData (params);
 }
 
+template <class C>
+void
+EpcX2SpecificEpcX2SapProvider<C>::SendHandoverCancel (HandoverCancelParams params)
+{
+  m_x2->DoSendHandoverCancel (params);
+}
+
 /**
  * EpcX2SpecificEpcX2SapUser
  */
@@ -666,6 +701,8 @@ public:
    * \param params the UE data parameters
    */
   virtual void RecvUeData (UeDataParams params);
+
+  virtual void RecvHandoverCancel (HandoverCancelParams params);
 
 private:
   EpcX2SpecificEpcX2SapUser ();
@@ -737,6 +774,13 @@ void
 EpcX2SpecificEpcX2SapUser<C>::RecvUeData (UeDataParams params)
 {
   m_rrc->DoRecvUeData (params);
+}
+
+template <class C>
+void
+EpcX2SpecificEpcX2SapUser<C>::RecvHandoverCancel (HandoverCancelParams params)
+{
+  m_rrc->DoRecvHandoverCancel (params);
 }
 
 } // namespace ns3

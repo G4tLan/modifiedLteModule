@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2017 Alexander Krotov
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Alexander Krotov <krotov@iitp.ru>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  *
  */
 
@@ -132,6 +138,17 @@ LteSecondaryCellSelectionTestCase::DoRun ()
 
   // Enable Idle mode cell selection.
   lteHelper->Attach (ueDevs);
+
+  /**
+   * Since no applications are enabled on the UE,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  for (uint32_t i = 0; i < ueDevs.GetN(); i++)
+    {
+      Ptr<NetDevice> ueDev = ueDevs.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
 
   // Connect to trace sources in UEs
   Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/StateTransition",

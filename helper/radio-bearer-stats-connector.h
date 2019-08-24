@@ -163,6 +163,18 @@ public:
   static void NotifyHandoverStartEnb (RadioBearerStatsConnector* c, std::string context, uint64_t imsi, uint16_t cellid, uint16_t rnti, uint16_t targetCellId);
 
   /**
+   * Function hooked to DisconnectedUe trace source at eNB RRC,
+   * which is fired when an UE leaves
+   * \param c
+   * \param context
+   * \param imsi
+   * \param cellid
+   * \param rnti
+   * 
+   */
+  static void NotifyUeLeavingEnb (RadioBearerStatsConnector* c, std::string context, uint64_t imsi, uint16_t cellid, uint16_t rnti);
+
+  /**
    * Function hooked to HandoverEndOk trace source at eNB RRC,
    * which is fired upon successful termination of a handover procedure
    * \param c

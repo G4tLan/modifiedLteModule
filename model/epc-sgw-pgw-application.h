@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,8 @@
  *
  * Author: Jaume Nin <jnin@cttc.cat>
  *         Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_SGW_PGW_APPLICATION_H
@@ -197,6 +200,21 @@ private:
    */
   void DoDeleteBearerResponse (EpcS11SapSgw::DeleteBearerResponseMessage req);
 
+ /**
+   * Send the buffered downlink packets to UE once RRC connection is established
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  void DoSendBufferedDlPackets (uint64_t imsi);
+
+  /**
+   * Discard the buffered downlink packets for an UE upon paging failure
+   * 
+   *
+   * \param imsi the unique identifier of the UE
+   */
+  void DoDiscardBufferedDlPackets (uint64_t imsi);
 
   /**
    * store info for each UE connected to this SGW
@@ -211,8 +229,11 @@ public:
      * \param tft the Traffic Flow Template of the new bearer to be added
      * \param epsBearerId the ID of the EPS Bearer to be activated
      * \param teid  the TEID of the new bearer
+     * \return true if the bearer was successfully added,
+     *         false if the bearer was already added before
+     *         (return value modified from void to bool) 
      */
-    void AddBearer (Ptr<EpcTft> tft, uint8_t epsBearerId, uint32_t teid);
+    bool AddBearer (Ptr<EpcTft> tft, uint8_t epsBearerId, uint32_t teid);
 
     /** 
      * \brief Function, deletes contexts of bearer on SGW and PGW side
@@ -266,6 +287,40 @@ public:
      * \param addr the IPv6 address of the UE
      */
     void SetUeAddr6 (Ipv6Address addr);
+
+    /**
+     * Store the incoming downlink packets in the respective UE buffer
+     * until RRC connection is established.
+     * Here, buffer implementation is similar to that of RLC UM layer
+     * (implementation not specified in standard).
+     * 
+     *
+     * \param packet the IP packet from the internet to be buffered
+     */
+    void AddPacketToBuffer (Ptr<Packet> packet);
+
+    /**
+     * Get the imsi of the UE.
+     * 
+     *
+     * \return the imsi of the UE
+     */
+    uint64_t GetImsi();
+
+    /**
+     * Get the Teid of the bearer represented by its epsBearerId for an UE.
+     * 
+     */
+    uint32_t GetTeid(uint8_t epsBearerId);
+
+
+    // Paging parameters
+    uint32_t m_maxDlBufferSize; ///< maximum downlink buffer size
+    uint32_t m_dlBufferSize; ///< downlink buffer size
+    std::list < Ptr<Packet> > m_dlBuffer;///< downlink packet buffer
+    bool m_dlDataNotificationFlag;///< flag to indicate downlink data notification msg was sent
+    uint64_t m_imsi;///< imsi of the UE
+    Ptr<EpcSgwPgwApplication> m_epcSgwPgwApplication;///< pointer to the EpcSgwPgwApplication object
 
   private:
     EpcTftClassifier m_tftClassifier; ///< TFT classifier
@@ -332,6 +387,14 @@ public:
   };
 
   std::map<uint16_t, EnbInfo> m_enbInfoByCellId; ///< eNB info by cell ID
+
+  /**
+   * Maximum downlink buffer size set as configurable parameter
+   * (Not in standard)
+   * (Based on LteRlcUm:m_maxTxBufferSize)
+   * (Value set same as LteRlcUm:m_maxTxBufferSize)
+   */
+  uint32_t m_maxDlBufferSize;
 
   /**
    * \brief Callback to trace RX (reception) data packets at Tun Net Device from internet.

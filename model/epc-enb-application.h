@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,8 @@
  *
  * Author: Jaume Nin <jnin@cttc.cat>
  *         Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_ENB_APPLICATION_H
@@ -173,6 +176,24 @@ public:
     friend bool operator < (const EpsFlowId_t &a, const EpsFlowId_t &b);
   };
 
+  /**
+   * Receive the S1AP paging message of each UE
+   * and send the paging parameters(paging records) to enbRrc
+   * to construct the RRC paging message
+   * 
+   *
+   * \param msg S1AP paging message of an UE
+   */
+  void DoRecvS1apPagingMessage(EpcS1apSapEnb::S1apPagingMessage msg);
+
+  /**
+   * Notify the MME that the data radio bearer setup is completed,
+   * so the buffered downlink packets can be sent to UE through the respective bearers
+   * 
+   *
+   * \param imsi the UE IMSI
+   */
+  void DoNotifyDataRadioBearerSetupCompleted(uint64_t imsi);
 
 private:
 
@@ -329,6 +350,7 @@ private:
    * \brief Callback to trace RX (reception) data packets from S1-U Socket.
    */ 
   TracedCallback<Ptr<Packet> > m_rxS1uSocketPktTrace;
+
 };
 
 } //namespace ns3

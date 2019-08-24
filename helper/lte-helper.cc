@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -19,6 +20,11 @@
  *         Giuseppe Piro <g.piro@poliba.it> (parts of the PHY & channel  creation & configuration copied from the GSoC 2011 code)
  * Modified by: Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation) 
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *      (support for paging;
+ *      integrated the RACH realistic model(taken from Lena-plus(work of Michele Polese))
+ *      and also enhanced the module)
  */
 
 #include "lte-helper.h"
@@ -37,6 +43,7 @@
 #include <ns3/lte-ue-phy.h>
 #include <ns3/lte-spectrum-phy.h>
 #include <ns3/lte-chunk-processor.h>
+#include <ns3/lte-chunk-processor-multiple.h>
 #include <ns3/multi-model-spectrum-channel.h>
 #include <ns3/friis-spectrum-propagation-loss.h>
 #include <ns3/trace-fading-loss-model.h>
@@ -65,6 +72,8 @@
 #include <ns3/epc-x2.h>
 #include <ns3/object-map.h>
 #include <ns3/object-factory.h>
+#include "ns3/ra-preamble-stats-calculator.h"
+#include "ns3/ra-complete-stats-calculator.h"
 
 namespace ns3 {
 
@@ -155,6 +164,12 @@ TypeId LteHelper::GetTypeId (void)
                    BooleanValue (true), 
                    MakeBooleanAccessor (&LteHelper::m_useIdealRrc),
                    MakeBooleanChecker ())
+    .AddAttribute ("UseIdealPrach",
+                   "If true, ideal Prach will be used. If UseIdealRrc is true"
+                   " this will be ignored",
+                   BooleanValue (true), 
+                   MakeBooleanAccessor (&LteHelper::m_useIdealPrach),
+                   MakeBooleanChecker ())    
     .AddAttribute ("AnrEnabled",
                    "Activate or deactivate Automatic Neighbour Relation function",
                    BooleanValue (true),
@@ -560,6 +575,11 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
       pData->AddCallback (MakeCallback (&LteSpectrumPhy::UpdateSinrPerceived, ulPhy));
       ulPhy->AddDataSinrChunkProcessor (pData);   // for evaluating PUSCH UL-CQI
 
+      //a callback and a chunk processor for prach
+      Ptr<LteChunkProcessorMultiple> prRach = Create<LteChunkProcessorMultiple> ();
+      prRach->AddCallback (MakeCallback (&LteSpectrumPhy::UpdateSinrPerceivedMultiple, ulPhy));
+      ulPhy->AddPrachSinrChunkProcessor (prRach); // for evaluating PRACH
+
       Ptr<LteChunkProcessor> pInterf = Create<LteChunkProcessor> ();
       pInterf->AddCallback (MakeCallback (&LteEnbPhy::ReportInterference, phy));
       ulPhy->AddInterferenceDataChunkProcessor (pInterf);   // for interference power tracing
@@ -605,6 +625,11 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
       rrc->SetLteEnbRrcSapUser (rrcProtocol->GetLteEnbRrcSapUser ());
       rrc->AggregateObject (rrcProtocol);
       rrcProtocol->SetCellId (cellId);
+      // with ideal RRC always use ideal PRACH
+      for (std::map<uint8_t,Ptr<ComponentCarrierEnb> >::iterator it = ccMap.begin (); it != ccMap.end (); ++it)
+        {
+    	  it->second->GetMac ()->SetPrachMode(false);
+        }
     }
   else
     {
@@ -613,6 +638,10 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
       rrc->SetLteEnbRrcSapUser (rrcProtocol->GetLteEnbRrcSapUser ());
       rrc->AggregateObject (rrcProtocol);
       rrcProtocol->SetCellId (cellId);
+      for (std::map<uint8_t,Ptr<ComponentCarrierEnb> >::iterator it = ccMap.begin (); it != ccMap.end (); ++it)
+        {
+    	  it->second->GetMac ()->SetPrachMode(!m_useIdealPrach);
+        }
     }
 
   if (m_epcHelper != 0)
@@ -680,11 +709,12 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
         {
           NS_FATAL_ERROR ("Error in SetComponentCarrierMacSapProviders");
         }
+
+      it->second->GetMac ()->SetLteUeMobilityModelCallback(MakeCallback (&LteHelper::GetUEMobiltyModel, this));
     }
 
 
 
-  handoverAlgorithm->setCellId(cellId);
   dev->SetNode (n);
   dev->SetAttribute ("CellId", UintegerValue (cellId));
   dev->SetAttribute ("LteEnbComponentCarrierManager", PointerValue (ccmEnbManager));
@@ -711,6 +741,7 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
       ccPhy->GetUlSpectrumPhy ()->SetLtePhyRxDataEndOkCallback (MakeCallback (&LteEnbPhy::PhyPduReceived, ccPhy));
       ccPhy->GetUlSpectrumPhy ()->SetLtePhyRxCtrlEndOkCallback (MakeCallback (&LteEnbPhy::ReceiveLteControlMessageList, ccPhy));
       ccPhy->GetUlSpectrumPhy ()->SetLtePhyUlHarqFeedbackCallback (MakeCallback (&LteEnbPhy::ReceiveLteUlHarqFeedback, ccPhy));
+      ccPhy->GetUlSpectrumPhy ()->SetLtePhyRxPrachEndOkCallback (MakeCallback (&LteEnbPhy::ReceiveLteControlMessageList, ccPhy));
       NS_LOG_LOGIC ("set the propagation model frequencies");
       double dlFreq = LteSpectrumValueHelper::GetCarrierFrequency (it->second->m_dlEarfcn);
       NS_LOG_LOGIC ("DL freq: " << dlFreq);
@@ -857,7 +888,6 @@ LteHelper::InstallSingleUeDevice (Ptr<Node> n)
   ccmUe->SetNumberOfComponentCarriers (m_noOfCcs);
 
   Ptr<LteUeRrc> rrc = CreateObject<LteUeRrc> ();
-  rrc->setNode(n);
   rrc->m_numberOfComponentCarriers = m_noOfCcs;
   // run intializeSap to create the proper number of sap provider/users
   rrc->InitializeSap();
@@ -873,6 +903,12 @@ LteHelper::InstallSingleUeDevice (Ptr<Node> n)
       rrc->AggregateObject (rrcProtocol);
       rrcProtocol->SetLteUeRrcSapProvider (rrc->GetLteUeRrcSapProvider ());
       rrc->SetLteUeRrcSapUser (rrcProtocol->GetLteUeRrcSapUser ());
+      // with ideal RRC always use ideal PRACH
+      for (std::map<uint8_t, Ptr<ComponentCarrierUe> >::iterator it = ueCcMap.begin (); it != ueCcMap.end (); ++it)
+        {
+    	  it->second->GetPhy ()->SetPrachMode(false);
+        }
+      rrc->SetPrachMode(false);//set the type of RRC protocol used at the RRC layer
     }
   else
     {
@@ -881,6 +917,11 @@ LteHelper::InstallSingleUeDevice (Ptr<Node> n)
       rrc->AggregateObject (rrcProtocol);
       rrcProtocol->SetLteUeRrcSapProvider (rrc->GetLteUeRrcSapProvider ());
       rrc->SetLteUeRrcSapUser (rrcProtocol->GetLteUeRrcSapUser ());
+      for (std::map<uint8_t, Ptr<ComponentCarrierUe> >::iterator it = ueCcMap.begin (); it != ueCcMap.end (); ++it)
+        {
+    	  it->second->GetPhy ()->SetPrachMode(!m_useIdealPrach);
+        }
+      rrc->SetPrachMode(!m_useIdealPrach);//set the type of RRC protocol used at the RRC layer
     }
 
   if (m_epcHelper != 0)
@@ -951,6 +992,9 @@ LteHelper::InstallSingleUeDevice (Ptr<Node> n)
 
   dev->Initialize ();
 
+  m_ueMobilityModelMap[imsi]=n->GetObject<MobilityModel> ();//add UE mobility model to map with IMSI as key
+
+
   return dev;
 }
 
@@ -989,6 +1033,42 @@ LteHelper::Attach (Ptr<NetDevice> ueDevice)
 
   // instruct UE to immediately enter CONNECTED mode after camping
   ueNas->Connect ();
+
+  // activate default EPS bearer
+  m_epcHelper->ActivateEpsBearer (ueDevice, ueLteDevice->GetImsi (),
+                                  EpcTft::Default (),
+                                  EpsBearer (EpsBearer::NGBR_VIDEO_TCP_DEFAULT));
+}
+
+void
+LteHelper::AttachAndDonotConnect (NetDeviceContainer ueDevices)
+{
+  NS_LOG_FUNCTION (this);
+  for (NetDeviceContainer::Iterator i = ueDevices.Begin (); i != ueDevices.End (); ++i)
+    {
+      AttachAndDonotConnect (*i);
+    }
+}
+
+void
+LteHelper::AttachAndDonotConnect (Ptr<NetDevice> ueDevice)
+{
+  NS_LOG_FUNCTION (this);
+
+  if (m_epcHelper == 0)
+    {
+      NS_FATAL_ERROR ("This function is not valid without properly configured EPC");
+    }
+
+  Ptr<LteUeNetDevice> ueLteDevice = ueDevice->GetObject<LteUeNetDevice> ();
+  if (ueLteDevice == 0)
+    {
+      NS_FATAL_ERROR ("The passed NetDevice must be an LteUeNetDevice");
+    }
+  Ptr<EpcUeNas> ueNas = ueLteDevice->GetNas ();
+  NS_ASSERT (ueNas != 0);
+  uint16_t dlEarfcn = ueLteDevice->GetDlEarfcn ();
+  ueNas->StartCellSelection (dlEarfcn);
 
   // activate default EPS bearer
   m_epcHelper->ActivateEpsBearer (ueDevice, ueLteDevice->GetImsi (),
@@ -1427,6 +1507,8 @@ LteHelper::EnableTraces (void)
   EnableMacTraces ();
   EnableRlcTraces ();
   EnablePdcpTraces ();
+  EnableRaPreambleTraces();
+  EnableRaDelayTraces();
 }
 
 void
@@ -1580,10 +1662,55 @@ LteHelper::EnablePdcpTraces (void)
   m_radioBearerStatsConnector.EnablePdcpStats (m_pdcpStats);
 }
 
+void
+LteHelper::EnableRaPreambleTraces (void)
+{
+  NS_LOG_FUNCTION("Enabling ra traces");
+  NS_ASSERT_MSG (m_raPreambleStats == 0, "please make sure that LteHelper::EnableRaPrambleTraces is called at most once");
+  m_raPreambleStats = CreateObject<RaPreambleStatsCalculator> ();
+  Config::Connect ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/LteEnbMac/RaPreambleReceived",
+                   MakeBoundCallback (&RaPreambleStatsCalculator::StorePreambleRx, m_raPreambleStats));
+  Config::Connect ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/LteEnbPhy/UlSpectrumPhy/PrachPhyReception",
+                   MakeBoundCallback (&RaPreambleStatsCalculator::StorePreamblePhyRx, m_raPreambleStats));
+}
+
+Ptr<RaPreambleStatsCalculator>
+LteHelper::GetRaPreambleStats (void)
+{
+  return m_raPreambleStats;
+}
+
+void
+LteHelper::EnableRaDelayTraces (void)
+{
+  NS_LOG_FUNCTION("Enabling ra delay tracing");
+  NS_ASSERT_MSG(m_raDelayStats == 0, "please make sure that LteHelper::EnableRaDelayTraces is called at most once");
+  m_raDelayStats = CreateObject<RaCompleteStatsCalculator> ();
+  Config::Connect ("/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/LteUePhy/PrachTxStart",
+                   MakeBoundCallback (&RaCompleteStatsCalculator::StorePreambleTx, m_raDelayStats));
+  Config::Connect ("/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/LteUeRrc/ConnectionEstablished",
+                   MakeBoundCallback (&RaCompleteStatsCalculator::StoreMsg4Rx, m_raDelayStats));
+}
+
+Ptr<RaCompleteStatsCalculator>
+LteHelper::GetRaDelayStats (void)
+{
+  return m_raDelayStats;
+}
+
+
+
 Ptr<RadioBearerStatsCalculator>
 LteHelper::GetPdcpStats (void)
 {
   return m_pdcpStats;
 }
 
+Ptr<MobilityModel>
+LteHelper::GetUEMobiltyModel (uint64_t imsi)
+{
+  std::map<uint64_t, Ptr<MobilityModel> >::iterator it = m_ueMobilityModelMap.find (imsi);
+  NS_ASSERT_MSG(it != m_ueMobilityModelMap.end (), "could not find any UE with IMSI " << imsi);
+  return it->second;
+}
 } // namespace ns3

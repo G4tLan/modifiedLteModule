@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model) 
+ *
+ *  Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging, uplink synchronization;
+ *    integrated the RACH realistic model
+ *    (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 #include "lte-control-messages.h"
@@ -25,6 +35,7 @@
 #include "ns3/log.h"
 #include "lte-net-device.h"
 #include "lte-ue-net-device.h"
+#include "ns3/vector.h"
 
 namespace ns3 {
 
@@ -192,6 +203,41 @@ RachPreambleLteControlMessage::GetRapId () const
   return m_rapId;
 }
 
+void 
+RachPreambleLteControlMessage::SetImsi (uint64_t imsi)
+{
+  m_imsi = imsi;
+}
+
+uint64_t
+RachPreambleLteControlMessage::GetImsi() const
+{
+  return m_imsi;
+}
+
+void
+RachPreambleLteControlMessage::SetStartTime(Time time)
+{
+  m_time = time;
+}
+
+Time
+RachPreambleLteControlMessage::GetStartTime() const
+{
+  return m_time;
+}
+
+void
+RachPreambleLteControlMessage::SetPosition(Vector position)
+{
+  m_position = position;
+}
+
+Vector 
+RachPreambleLteControlMessage::GetPosition(void) const
+{
+  return m_position;
+}
 
 // ----------------------------------------------------------------------------------------------------------
 
@@ -212,6 +258,19 @@ uint16_t
 RarLteControlMessage::GetRaRnti () const
 {
   return m_raRnti;
+}
+
+void
+RarLteControlMessage::SetBackoffIndicator (uint16_t backoffIndicator)
+{
+  NS_ASSERT_MSG(backoffIndicator >= 0 && backoffIndicator <= 15, "See Table 7.2-1 on 3GPP TS 36.321");
+  m_backoffIndicator = backoffIndicator;
+}
+
+uint16_t 
+RarLteControlMessage::GetBackoffIndicator () const
+{
+  return m_backoffIndicator;
 }
 
 
@@ -308,6 +367,153 @@ DlHarqFeedbackLteControlMessage::GetDlHarqFeedback (void)
   return m_dlInfoListElement;
 }
 
+
+// --------------------------------------------------------------------------
+
+
+TacLteControlMessage::TacLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::TAC);
+  m_timeAlignmentTimer=0;
+}
+
+
+TacLteControlMessage::~TacLteControlMessage (void)
+{
+
+}
+
+void
+TacLteControlMessage::SetTac (MacCeListElement_s tac)
+{
+  m_tac = tac;
+
+}
+
+MacCeListElement_s
+TacLteControlMessage::GetTac (void) const
+{
+  return m_tac;
+}
+
+void TacLteControlMessage::SetTimeAlignmentTimer (uint16_t timeAlignmentTimer)
+{
+  m_timeAlignmentTimer=timeAlignmentTimer;
+}
+
+uint16_t TacLteControlMessage::GetTimeAlignmentTimer() const
+{
+  return m_timeAlignmentTimer;
+}
+
+// --------------------------------------------------------------------------
+
+
+CRntiLteControlMessage::CRntiLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::CRNTI);
+  m_tempRnti = 0;
+}
+
+
+CRntiLteControlMessage::~CRntiLteControlMessage (void)
+{
+
+}
+
+void
+CRntiLteControlMessage::SetCRnti (MacCeListElement_s crnti)
+{
+  m_crnti = crnti;
+
+}
+
+MacCeListElement_s
+CRntiLteControlMessage::GetCRnti (void) const
+{
+  return m_crnti;
+}
+
+void
+CRntiLteControlMessage::SetTempRnti (uint16_t tempRnti)
+{
+  m_tempRnti = tempRnti;
+
+}
+
+uint16_t
+CRntiLteControlMessage::GetTempRnti (void) const
+{
+  return m_tempRnti;
+}
+
+// --------------------------------------------------------------------------
+
+
+CriLteControlMessage::CriLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::CRI);
+  m_ueContentionResolutionIdentity = 0;
+  m_rnti = 0;
+}
+
+
+CriLteControlMessage::~CriLteControlMessage (void)
+{
+
+}
+
+void
+CriLteControlMessage::SetUeContentionResolutionIdentity (uint64_t ueContentionResolutionIdentity)
+{
+  m_ueContentionResolutionIdentity = ueContentionResolutionIdentity;
+
+}
+
+uint64_t
+CriLteControlMessage::GetUeContentionResolutionIdentity (void) const
+{
+  return m_ueContentionResolutionIdentity;
+}
+
+void
+CriLteControlMessage::SetRnti (uint16_t rnti)
+{
+  m_rnti=rnti;
+}
+
+uint16_t CriLteControlMessage::GetRnti () const
+{
+  return m_rnti;
+}
+
+// ----------------------------------------------------------------------------------------------------------
+
+
+
+PagingLteControlMessage::PagingLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::PAGING);
+  m_pRnti = 65534;//FFFE (default value)
+}
+
+
+void
+PagingLteControlMessage::SetRrcPagingMsg (LteRrcSap::RrcPagingMessage msg)
+{
+  m_pagingMsg = msg;
+}
+
+LteRrcSap::RrcPagingMessage
+PagingLteControlMessage::GetRrcPagingMsg () const
+{
+  return m_pagingMsg;
+}
+
+uint16_t PagingLteControlMessage::GetPRnti() const
+{
+  return m_pRnti;
+}
 
 } // namespace ns3
 

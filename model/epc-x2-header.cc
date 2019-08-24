@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for handover failure)
  */
 
 #include "ns3/log.h"
@@ -1485,6 +1488,131 @@ EpcX2ResourceStatusUpdateHeader::GetLengthOfIes () const
 
 uint32_t
 EpcX2ResourceStatusUpdateHeader::GetNumberOfIes () const
+{
+  return m_numberOfIes;
+}
+
+/////////////////////////////////////////////////////////////////////
+
+NS_OBJECT_ENSURE_REGISTERED (EpcX2HandoverCancelHeader);
+
+EpcX2HandoverCancelHeader::EpcX2HandoverCancelHeader ()
+  : m_numberOfIes (3),
+    m_headerLength (6),
+    m_oldEnbUeX2apId (0xfffa),
+    m_newEnbUeX2apId (0xfffa),
+    m_cause (0xfffa)
+{
+}
+
+EpcX2HandoverCancelHeader::~EpcX2HandoverCancelHeader ()
+{
+  m_numberOfIes = 0;
+  m_headerLength = 0;
+  m_oldEnbUeX2apId = 0xfffb;
+  m_newEnbUeX2apId = 0xfffb;
+  m_cause = 0xfffb;
+}
+
+TypeId
+EpcX2HandoverCancelHeader::GetTypeId (void)
+{
+  static TypeId tid = TypeId ("ns3::EpcX2HandoverCancelHeader")
+    .SetParent<Header> ()
+    .SetGroupName("Lte")
+    .AddConstructor<EpcX2HandoverCancelHeader> ()
+  ;
+  return tid;
+}
+
+TypeId
+EpcX2HandoverCancelHeader::GetInstanceTypeId (void) const
+{
+  return GetTypeId ();
+}
+
+uint32_t
+EpcX2HandoverCancelHeader::GetSerializedSize (void) const
+{
+  return m_headerLength;
+}
+
+void
+EpcX2HandoverCancelHeader::Serialize (Buffer::Iterator start) const
+{
+  Buffer::Iterator i = start;
+
+  i.WriteHtonU16 (m_oldEnbUeX2apId);
+  i.WriteHtonU16 (m_newEnbUeX2apId);
+  i.WriteHtonU16 (m_cause);
+}
+
+uint32_t
+EpcX2HandoverCancelHeader::Deserialize (Buffer::Iterator start)
+{
+  Buffer::Iterator i = start;
+
+  m_oldEnbUeX2apId = i.ReadNtohU16 ();
+  m_newEnbUeX2apId = i.ReadNtohU16 ();
+  m_cause = i.ReadNtohU16 ();
+  m_numberOfIes = 3;
+  m_headerLength = 6;
+
+  return GetSerializedSize ();
+}
+
+void
+EpcX2HandoverCancelHeader::Print (std::ostream &os) const
+{
+  os << "OldEnbUeX2apId=" << m_oldEnbUeX2apId;
+  os << " NewEnbUeX2apId=" << m_newEnbUeX2apId;
+  os << " Cause = " << m_cause;
+}
+
+uint16_t
+EpcX2HandoverCancelHeader::GetOldEnbUeX2apId () const
+{
+  return m_oldEnbUeX2apId;
+}
+
+void
+EpcX2HandoverCancelHeader::SetOldEnbUeX2apId (uint16_t x2apId)
+{
+  m_oldEnbUeX2apId = x2apId;
+}
+
+uint16_t
+EpcX2HandoverCancelHeader::GetNewEnbUeX2apId () const
+{
+  return m_newEnbUeX2apId;
+}
+
+void
+EpcX2HandoverCancelHeader::SetNewEnbUeX2apId (uint16_t x2apId)
+{
+  m_newEnbUeX2apId = x2apId;
+}
+
+uint16_t
+EpcX2HandoverCancelHeader::GetCause () const
+{
+  return m_cause;
+}
+
+void
+EpcX2HandoverCancelHeader::SetCause (uint16_t cause)
+{
+  m_cause = cause;
+}
+
+uint32_t
+EpcX2HandoverCancelHeader::GetLengthOfIes () const
+{
+  return m_headerLength;
+}
+
+uint32_t
+EpcX2HandoverCancelHeader::GetNumberOfIes () const
 {
   return m_numberOfIes;
 }

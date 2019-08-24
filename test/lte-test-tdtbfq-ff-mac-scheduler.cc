@@ -413,7 +413,7 @@ LenaTdTbfqFfMacSchedulerTestCase1::DoRun (void)
   serverApps.Start (Seconds (0.001));
   clientApps.Start (Seconds (0.001));
 
-  double statsStartTime = 0.040; // need to allow for RRC connection establishment + SRS
+  double statsStartTime = 0.060; // need to allow for RRC connection establishment + SRS
   double statsDuration = 1;
   double tolerance = 0.1;
   Simulator::Stop (Seconds (statsStartTime + statsDuration - 0.0001));

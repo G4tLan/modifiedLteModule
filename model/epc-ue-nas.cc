@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *        (support for Paging;
+ *    integrated the RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 #include <ns3/fatal-error.h>
@@ -65,6 +75,8 @@ EpcUeNas::EpcUeNas ()
 {
   NS_LOG_FUNCTION (this);
   m_asSapUser = new MemberLteAsSapUser<EpcUeNas> (this);
+  //paging parameters
+  m_UlBufferSize = 0;
 }
 
 
@@ -85,8 +97,13 @@ EpcUeNas::GetTypeId (void)
 {
   static TypeId tid = TypeId ("ns3::EpcUeNas")
     .SetParent<Object> ()
-    .SetGroupName("Lte")
+    .SetGroupName ("Lte")
     .AddConstructor<EpcUeNas> ()
+    .AddAttribute ("MaxUlBufferSize",
+                       "Maximum Size of the Uplink Packet Buffer (in Bytes)",
+                       UintegerValue (10 * 1024),
+                       MakeUintegerAccessor (&EpcUeNas::m_maxUlBufferSize),
+                       MakeUintegerChecker<uint32_t> ())
     .AddTraceSource ("StateTransition",
                      "fired upon every UE NAS state transition",
                      MakeTraceSourceAccessor (&EpcUeNas::m_stateTransitionCallback),
@@ -95,14 +112,14 @@ EpcUeNas::GetTypeId (void)
   return tid;
 }
 
-void 
+void
 EpcUeNas::SetDevice (Ptr<NetDevice> dev)
 {
   NS_LOG_FUNCTION (this << dev);
   m_device = dev;
 }
 
-void 
+void
 EpcUeNas::SetImsi (uint64_t imsi)
 {
   NS_LOG_FUNCTION (this << imsi);
@@ -152,7 +169,7 @@ EpcUeNas::StartCellSelection (uint32_t dlEarfcn)
   m_asSapProvider->StartCellSelection (dlEarfcn);
 }
 
-void 
+void
 EpcUeNas::Connect ()
 {
   NS_LOG_FUNCTION (this);
@@ -173,8 +190,22 @@ EpcUeNas::Connect (uint16_t cellId, uint32_t dlEarfcn)
   m_asSapProvider->Connect ();
 }
 
+void
+EpcUeNas::DoDisconnect ()
+{
+  NS_LOG_FUNCTION (this);
+  // remove tfts
+  while (m_bidCounter > 0)
+    {
+      m_tftClassifier.Delete (m_bidCounter);
+      m_bidCounter--;
+    }
+  this->Disconnect ();
+  m_bearersToBeActivatedList = m_bearersToBeActivatedListForReconnection; //restore the bearer list to be activated for the next RRC connection
 
-void 
+}
+
+void
 EpcUeNas::Disconnect ()
 {
   NS_LOG_FUNCTION (this);
@@ -183,7 +214,7 @@ EpcUeNas::Disconnect ()
 }
 
 
-void 
+void
 EpcUeNas::ActivateEpsBearer (EpsBearer bearer, Ptr<EpcTft> tft)
 {
   NS_LOG_FUNCTION (this);
@@ -198,6 +229,7 @@ EpcUeNas::ActivateEpsBearer (EpsBearer bearer, Ptr<EpcTft> tft)
       btba.bearer = bearer;
       btba.tft = tft;
       m_bearersToBeActivatedList.push_back (btba);
+      m_bearersToBeActivatedListForReconnection.push_back (btba);
       break;
     }
 }
@@ -216,24 +248,26 @@ EpcUeNas::Send (Ptr<Packet> packet)
         uint8_t bid = (uint8_t) (id & 0x000000FF);
         if (bid == 0)
           {
+            NS_LOG_INFO ("Unable to send data since bid is " << bid );
             return false;
           }
         else
           {
-            m_asSapProvider->SendData (packet, bid); 
+            NS_LOG_INFO ("Nas sends packet to rrc for bid " << bid );
+            m_asSapProvider->SendData (packet, bid);
             return true;
           }
       }
       break;
 
     default:
-      NS_LOG_WARN (this << " NAS OFF, discarding packet");
+      this->AddPacketToBuffer (packet); //uplink data arrival in idle mode
       return false;
       break;
     }
 }
 
-void 
+void
 EpcUeNas::DoNotifyConnectionSuccessful ()
 {
   NS_LOG_FUNCTION (this);
@@ -245,9 +279,9 @@ void
 EpcUeNas::DoNotifyConnectionFailed ()
 {
   NS_LOG_FUNCTION (this);
-
-  // immediately retry the connection
-  Simulator::ScheduleNow (&LteAsSapProvider::Connect, m_asSapProvider);
+  DoNotifyConnectionReleased ();
+  // commented to prevent endless loop of connect->failure when bad connection  
+  // Simulator::ScheduleNow (&LteAsSapProvider::Connect, m_asSapProvider); // immediately retry the connection
 }
 
 void
@@ -257,14 +291,15 @@ EpcUeNas::DoRecvData (Ptr<Packet> packet)
   m_forwardUpCallback (packet);
 }
 
-void 
+void
 EpcUeNas::DoNotifyConnectionReleased ()
 {
   NS_LOG_FUNCTION (this);
   SwitchToState (OFF);
+  DoDiscardBufferedUlPackets ();
 }
 
-void 
+void
 EpcUeNas::DoActivateEpsBearer (EpsBearer bearer, Ptr<EpcTft> tft)
 {
   NS_LOG_FUNCTION (this);
@@ -280,7 +315,7 @@ EpcUeNas::GetState () const
   return m_state;
 }
 
-void 
+void
 EpcUeNas::SwitchToState (State newState)
 {
   NS_LOG_FUNCTION (this << ToString (newState));
@@ -307,6 +342,81 @@ EpcUeNas::SwitchToState (State newState)
 
 }
 
+void
+EpcUeNas::AddPacketToBuffer (Ptr<Packet> packet)
+{
+  NS_LOG_FUNCTION (this << packet);
+
+  if (m_UlBufferSize + packet->GetSize () <= m_maxUlBufferSize)
+    {
+      if (m_state == ATTACHING)
+        {
+          NS_LOG_LOGIC ("Ul Buffer: New packet added");
+          m_UlBuffer.push_back (packet);
+          m_UlBufferSize += packet->GetSize ();
+          NS_LOG_LOGIC ("NumOfPackets = " << m_UlBuffer.size ());
+          NS_LOG_LOGIC ("UlBufferSize = " << m_UlBufferSize);
+          return;
+        }
+      if (m_asSapProvider->IsUeCamped ())
+        {
+          this->Connect ();
+          m_asSapProvider->SetUlDataPendingFlag (true);
+          SwitchToState (ATTACHING);
+          NS_LOG_LOGIC ("Ul Buffer: New packet added");
+          m_UlBuffer.push_back (packet);
+          m_UlBufferSize += packet->GetSize ();
+          NS_LOG_LOGIC ("NumOfPackets = " << m_UlBuffer.size ());
+          NS_LOG_LOGIC ("UlBufferSize = " << m_UlBufferSize);
+        }
+      else
+        {
+          NS_ABORT_MSG_IF (m_state != OFF, "NAS should not drop packets in " << ToString (m_state) << " state" );
+          NS_LOG_WARN (this << " NAS OFF, discarding packet");
+        }
+    }
+  else
+    {
+      // Discard Application packet
+      NS_LOG_LOGIC ("UlBuffer is full. Application packet discarded");
+      NS_LOG_LOGIC ("MaxUlBufferSize = " << m_maxUlBufferSize);
+      NS_LOG_LOGIC ("UlBufferSize    = " << m_UlBufferSize);
+      NS_LOG_LOGIC ("packet size     = " << packet->GetSize ());
+    }
+}
+
+void
+EpcUeNas::DoSendBufferedUlPackets ()
+{
+  NS_LOG_FUNCTION (this);
+
+  while (!m_UlBuffer.empty ())
+    {
+      uint32_t id = m_tftClassifier.Classify (m_UlBuffer.front (), EpcTft::UPLINK);
+      NS_LOG_INFO ("id: " << id << ", assert condition:" << (id & 0xFFFFFF00));
+      NS_ASSERT ((id & 0xFFFFFF00) == 0);
+      uint8_t bid = (uint8_t) (id & 0x000000FF);
+      NS_LOG_INFO ("bid: " << bid);
+      if (bid == 0)
+        {
+          //do nothing
+        }
+      else
+        {
+          m_asSapProvider->SendData (m_UlBuffer.front (), bid);
+
+        }
+      m_UlBuffer.pop_front ();
+    }
+}
+
+void 
+EpcUeNas::DoDiscardBufferedUlPackets ()
+{
+  NS_LOG_FUNCTION (this);
+  m_UlBuffer.clear();
+  m_UlBufferSize = 0;
+}
 
 } // namespace ns3
 

@@ -144,6 +144,7 @@ A2A4RsrqHandoverAlgorithm::DoReportUeMeas (uint16_t rnti,
                                            LteRrcSap::MeasResults measResults)
 {
   NS_LOG_FUNCTION (this << rnti << (uint16_t) measResults.measId);
+
   if (measResults.measId == m_a2MeasId)
     {
       NS_ASSERT_MSG (measResults.rsrqResult <= m_servingCellThreshold,

@@ -153,6 +153,8 @@ RadioBearerStatsConnector::EnsureConnected ()
     {
       Config::Connect ("/NodeList/*/DeviceList/*/LteEnbRrc/NewUeContext",
 		       MakeBoundCallback (&RadioBearerStatsConnector::NotifyNewUeContextEnb, this));
+      Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
+           MakeBoundCallback (&RadioBearerStatsConnector::NotifyConnectionSetupUe, this));
       Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/RandomAccessSuccessful",
 		       MakeBoundCallback (&RadioBearerStatsConnector::NotifyRandomAccessSuccessfulUe, this));
       Config::Connect ("/NodeList/*/DeviceList/*/LteEnbRrc/ConnectionReconfiguration",
@@ -167,6 +169,8 @@ RadioBearerStatsConnector::EnsureConnected ()
 		       MakeBoundCallback (&RadioBearerStatsConnector::NotifyHandoverEndOkEnb, this));
       Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/HandoverEndOk",
 		       MakeBoundCallback (&RadioBearerStatsConnector::NotifyHandoverEndOkUe, this));
+      Config::Connect ("/NodeList/*/DeviceList/*/LteEnbRrc/NotifyConnectionRelease",
+           MakeBoundCallback (&RadioBearerStatsConnector::NotifyUeLeavingEnb, this));
       m_connected = true;
     }
 }
@@ -224,6 +228,14 @@ RadioBearerStatsConnector::NotifyHandoverEndOkEnb (RadioBearerStatsConnector* c,
 {
   c->ConnectTracesEnb (context, imsi, cellId, rnti);
 }
+
+void 
+RadioBearerStatsConnector::NotifyUeLeavingEnb (RadioBearerStatsConnector* c, std::string context, uint64_t imsi, uint16_t cellId, uint16_t rnti)
+{
+  c->DisconnectTracesEnb (context, imsi, cellId, rnti);
+  c->DisconnectTracesUe (context, imsi, cellId, rnti);
+}
+
 
 void 
 RadioBearerStatsConnector::StoreUeManagerPath (std::string context, uint16_t cellId, uint16_t rnti)
@@ -434,14 +446,96 @@ RadioBearerStatsConnector::ConnectTracesEnb (std::string context, uint64_t imsi,
 void 
 RadioBearerStatsConnector::DisconnectTracesUe (std::string context, uint64_t imsi, uint16_t cellId, uint16_t rnti)
 {
-  NS_LOG_FUNCTION (this);
+  NS_LOG_FUNCTION (this << context );
+
+  if (m_imsiSeenUe.find (imsi) != m_imsiSeenUe.end ())
+    {
+      NS_LOG_LOGIC (this << "expected context should match /NodeList/*/DeviceList/*/LteUeRrc/");
+      std::string basePath = context.substr (0, context.rfind ("/"));
+      if (m_rlcStats)
+        {
+          Ptr<BoundCallbackArgument> arg = Create<BoundCallbackArgument> ();
+          arg->imsi = imsi;
+          arg->cellId = cellId; 
+          arg->stats = m_rlcStats;
+          Config::Disconnect (basePath + "/DataRadioBearerMap/*/LteRlc/TxPDU",
+               MakeBoundCallback (&UlTxPduCallback, arg));
+          Config::Disconnect (basePath + "/DataRadioBearerMap/*/LteRlc/RxPDU",
+               MakeBoundCallback (&DlRxPduCallback, arg));
+          Config::Disconnect (basePath + "/Srb1/LteRlc/TxPDU",
+               MakeBoundCallback (&UlTxPduCallback, arg));
+          Config::Disconnect (basePath + "/Srb1/LteRlc/RxPDU",
+               MakeBoundCallback (&DlRxPduCallback, arg));
+
+        }
+      if (m_pdcpStats)
+        {
+          Ptr<BoundCallbackArgument> arg = Create<BoundCallbackArgument> ();
+          arg->imsi = imsi;
+          arg->cellId = cellId; 
+          arg->stats = m_pdcpStats;
+          Config::Disconnect (basePath + "/DataRadioBearerMap/*/LtePdcp/RxPDU",
+               MakeBoundCallback (&DlRxPduCallback, arg));
+          Config::Disconnect (basePath + "/DataRadioBearerMap/*/LtePdcp/TxPDU",
+               MakeBoundCallback (&UlTxPduCallback, arg));
+          Config::Disconnect (basePath + "/Srb1/LtePdcp/RxPDU",
+               MakeBoundCallback (&DlRxPduCallback, arg));
+          Config::Disconnect (basePath + "/Srb1/LtePdcp/TxPDU",
+               MakeBoundCallback (&UlTxPduCallback, arg));
+        }
+
+      m_imsiSeenUe.erase(m_imsiSeenUe.find(imsi));
+    }
 }
 
 
 void 
 RadioBearerStatsConnector::DisconnectTracesEnb (std::string context, uint64_t imsi, uint16_t cellId, uint16_t rnti)
 {
-  NS_LOG_FUNCTION (this);
+  NS_LOG_FUNCTION (this << context );
+
+  if (m_imsiSeenEnb.find (imsi) != m_imsiSeenEnb.end ())
+    {
+      NS_LOG_LOGIC (this << "expected context  should match /NodeList/*/DeviceList/*/LteEnbRrc/");
+      std::ostringstream basePath;
+      basePath <<  context.substr (0, context.rfind ("/")) << "/UeMap/" << (uint32_t) rnti;
+      if (m_rlcStats)
+        {
+          Ptr<BoundCallbackArgument> arg = Create<BoundCallbackArgument> ();
+          arg->imsi = imsi;
+          arg->cellId = cellId; 
+          arg->stats = m_rlcStats;
+          Config::Disconnect (basePath.str () + "/DataRadioBearerMap/*/LteRlc/RxPDU",
+               MakeBoundCallback (&UlRxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/DataRadioBearerMap/*/LteRlc/TxPDU",
+               MakeBoundCallback (&DlTxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb0/LteRlc/RxPDU",
+               MakeBoundCallback (&UlRxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb0/LteRlc/TxPDU",
+               MakeBoundCallback (&DlTxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb1/LteRlc/RxPDU",
+               MakeBoundCallback (&UlRxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb1/LteRlc/TxPDU",
+               MakeBoundCallback (&DlTxPduCallback, arg));
+        }
+      if (m_pdcpStats)
+        {
+          Ptr<BoundCallbackArgument> arg = Create<BoundCallbackArgument> ();
+          arg->imsi = imsi;
+          arg->cellId = cellId; 
+          arg->stats = m_pdcpStats;
+          Config::Disconnect (basePath.str () + "/DataRadioBearerMap/*/LtePdcp/TxPDU",
+               MakeBoundCallback (&DlTxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/DataRadioBearerMap/*/LtePdcp/RxPDU",
+               MakeBoundCallback (&UlRxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb1/LtePdcp/TxPDU",
+               MakeBoundCallback (&DlTxPduCallback, arg));
+          Config::Disconnect (basePath.str () + "/Srb1/LtePdcp/RxPDU",
+               MakeBoundCallback (&UlRxPduCallback, arg));
+        }
+
+      m_imsiSeenEnb.erase (m_imsiSeenEnb.find(imsi));
+    }    
 }
 
 

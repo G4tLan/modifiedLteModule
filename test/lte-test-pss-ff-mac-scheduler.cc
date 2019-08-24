@@ -656,7 +656,7 @@ LenaPssFfMacSchedulerTestCase2::DoRun (void)
   serverApps.Start (Seconds (0.030));
   clientApps.Start (Seconds (0.030));
 
-  double statsStartTime = 0.04; // need to allow for RRC connection establishment + SRS
+  double statsStartTime = 0.300; // need to allow for RRC connection establishment + SRS
   double statsDuration = 0.5;
   double tolerance = 0.1;
   Simulator::Stop (Seconds (statsStartTime + statsDuration - 0.0001));

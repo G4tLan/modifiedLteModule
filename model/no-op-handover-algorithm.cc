@@ -92,7 +92,6 @@ NoOpHandoverAlgorithm::DoReportUeMeas (uint16_t rnti,
                                        LteRrcSap::MeasResults measResults)
 {
   NS_LOG_FUNCTION (this << rnti << (uint16_t) measResults.measId);
-std::cout << "no op" << std::endl;
 }
 
 

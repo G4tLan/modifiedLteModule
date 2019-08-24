@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2014 Piotr Gawlowicz
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,6 +19,11 @@
  * Author: Piotr Gawlowicz <gawlowicz.p@gmail.com>
  * Based on lte-test-interference.{h,cc} by Manuel Requena <manuel.requena@cttc.es>
  *                                                                              Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include "ns3/simulator.h"
@@ -44,7 +50,7 @@
 #include "lte-simple-spectrum-phy.h"
 #include "ns3/spectrum-value.h"
 #include "ns3/lte-spectrum-value-helper.h"
-
+#include <ns3/lte-ue-rrc.h>
 
 using namespace ns3;
 
@@ -163,6 +169,23 @@ LteInterferenceHardFrTestCase::DoRun (void)
 
   lteHelper->Attach (ueDevs1, enbDevs.Get (0));
   lteHelper->Attach (ueDevs2, enbDevs.Get (1));
+
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev;
+  for (uint32_t i = 0; i < ueDevs1.GetN(); i++)
+    {
+      ueDev = ueDevs1.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
+  for (uint32_t j = 0; j < ueDevs2.GetN(); j++)
+    {
+      ueDev = ueDevs2.Get (j);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
 
   // Activate an EPS bearer
   enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
@@ -339,6 +362,23 @@ LteInterferenceStrictFrTestCase::DoRun (void)
 
   lteHelper->Attach (ueDevs1, enbDevs.Get (0));
   lteHelper->Attach (ueDevs2, enbDevs.Get (1));
+
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev;
+  for (uint32_t i = 0; i < ueDevs1.GetN(); i++)
+    {
+      ueDev = ueDevs1.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
+  for (uint32_t j = 0; j < ueDevs2.GetN(); j++)
+    {
+      ueDev = ueDevs2.Get (j);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
 
   // Activate an EPS bearer
   enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;

@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,11 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 #include "ns3/simulator.h"
@@ -38,6 +44,7 @@
 #include <ns3/lte-chunk-processor.h>
 
 #include "lte-test-interference.h"
+#include <ns3/lte-ue-rrc.h>
 
 
 using namespace ns3;
@@ -166,6 +173,23 @@ LteInterferenceTestCase::DoRun (void)
   lteHelper->Attach (ueDevs1, enbDevs.Get (0));
   lteHelper->Attach (ueDevs2, enbDevs.Get (1));
 
+  /**
+   * Since LTE-only simulation (without EPC) is performed,
+   * manually set the m_connectionPending flag for each UE so that
+   * they can transition to RRC CONNECTED state
+   */
+  Ptr<NetDevice> ueDev;
+  for (uint32_t i = 0; i < ueDevs1.GetN(); i++)
+    {
+      ueDev = ueDevs1.Get (i);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
+  for (uint32_t j = 0; j < ueDevs2.GetN(); j++)
+    {
+      ueDev = ueDevs2.Get (j);
+      ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+    }
+
   // Activate an EPS bearer
   enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
   EpsBearer bearer (q);
@@ -246,7 +270,7 @@ LteInterferenceTestCase::DlScheduling (DlSchedulingCallbackInfo dlInfo)
 {
   NS_LOG_FUNCTION (dlInfo.frameNo << dlInfo.subframeNo << dlInfo.rnti << (uint32_t) dlInfo.mcsTb1 << dlInfo.sizeTb1 << (uint32_t) dlInfo.mcsTb2 << dlInfo.sizeTb2);
   // need to allow for RRC connection establishment + CQI feedback reception + persistent data transmission
-  if (Simulator::Now () > MilliSeconds (65))
+  if (Simulator::Now () > MilliSeconds (80))
     {
       NS_TEST_ASSERT_MSG_EQ ((uint32_t)dlInfo.mcsTb1, (uint32_t)m_dlMcs, "Wrong DL MCS ");
     }
@@ -258,7 +282,7 @@ LteInterferenceTestCase::UlScheduling (uint32_t frameNo, uint32_t subframeNo, ui
 {
   NS_LOG_FUNCTION (frameNo << subframeNo << rnti << (uint32_t) mcs << sizeTb);
   // need to allow for RRC connection establishment + SRS transmission
-  if (Simulator::Now () > MilliSeconds (50))
+  if (Simulator::Now () > MilliSeconds (65))
     {
       NS_TEST_ASSERT_MSG_EQ ((uint32_t)mcs, (uint32_t)m_ulMcs, "Wrong UL MCS");
     }

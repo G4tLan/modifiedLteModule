@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for backward compatibility with UE transition
+ *    to CONNECTED state (for LTE-only simulation or when no applications are installed
+ *    on the UE or remote host which trigger the connection procedure))
  */
 
 
@@ -290,6 +296,21 @@ LteX2HandoverTestCase::DoRun ()
   // attachment (needs to be done after IP stack configuration)
   // all UEs attached to eNB 0 at the beginning
   m_lteHelper->Attach (ueDevices, enbDevices.Get (0));
+
+  if (!m_epc || m_nDedicatedBearers==0)
+      {
+      /**
+       * Since LTE-only simulation (without EPC) or EPC simulation with
+       * no dedicated bearers activated, is performed,
+       * manually set the m_connectionPending flag for each UE so that
+       * they can transition to RRC CONNECTED state
+       */
+      for (uint32_t i = 0; i < m_nUes; i++)
+        {
+          Ptr<NetDevice> ueDev = ueDevices.Get (i);
+          ueDev->GetObject<LteUeNetDevice> ()->GetRrc ()->SetConnectionPendingFlag (true);
+        }
+      }
    
   if (m_epc)
     {
@@ -432,7 +453,7 @@ LteX2HandoverTestCase::DoRun ()
   m_lteHelper->AddX2Interface (enbNodes);
 
   // check initial RRC connection
-  const Time maxRrcConnectionEstablishmentDuration = Seconds (0.080);
+  const Time maxRrcConnectionEstablishmentDuration = Seconds (0.3);
   for (NetDeviceContainer::Iterator it = ueDevices.Begin (); it != ueDevices.End (); ++it)
     {
       Simulator::Schedule (maxRrcConnectionEstablishmentDuration, 
@@ -605,31 +626,31 @@ LteX2HandoverTestSuite::LteX2HandoverTestSuite ()
   // bwd means handover from enb 1 to enb 0
 
   HandoverEvent ue1fwd;
-  ue1fwd.startTime = MilliSeconds (100); 
+  ue1fwd.startTime = MilliSeconds (400);
   ue1fwd.ueDeviceIndex = 0;
   ue1fwd.sourceEnbDeviceIndex = 0;
   ue1fwd.targetEnbDeviceIndex = 1;
 
   HandoverEvent ue1bwd;
-  ue1bwd.startTime = MilliSeconds (300); 
+  ue1bwd.startTime = MilliSeconds (600);
   ue1bwd.ueDeviceIndex = 0;
   ue1bwd.sourceEnbDeviceIndex = 1;
   ue1bwd.targetEnbDeviceIndex = 0;
 
   HandoverEvent ue1fwdagain;
-  ue1fwdagain.startTime = MilliSeconds (500); 
+  ue1fwdagain.startTime = MilliSeconds (800);
   ue1fwdagain.ueDeviceIndex = 0;
   ue1fwdagain.sourceEnbDeviceIndex = 0;
   ue1fwdagain.targetEnbDeviceIndex = 1;
 
   HandoverEvent ue2fwd;
-  ue2fwd.startTime = MilliSeconds (110); 
+  ue2fwd.startTime = MilliSeconds (410);
   ue2fwd.ueDeviceIndex = 1;
   ue2fwd.sourceEnbDeviceIndex = 0;
   ue2fwd.targetEnbDeviceIndex = 1;
 
   HandoverEvent ue2bwd;
-  ue2bwd.startTime = MilliSeconds (250); 
+  ue2bwd.startTime = MilliSeconds (550);
   ue2bwd.ueDeviceIndex = 1;
   ue2bwd.sourceEnbDeviceIndex = 1;
   ue2bwd.targetEnbDeviceIndex = 0;
@@ -692,7 +713,7 @@ LteX2HandoverTestSuite::LteX2HandoverTestSuite ()
           AddTestCase (new LteX2HandoverTestCase (  1,    1,    hel1, hel1name, true, *schedIt, false, useIdealRrc), TestCase::EXTENSIVE);
           AddTestCase (new LteX2HandoverTestCase (  1,    2,    hel1, hel1name, true, *schedIt, false, useIdealRrc), TestCase::EXTENSIVE);
           AddTestCase (new LteX2HandoverTestCase (  2,    0,    hel1, hel1name, true, *schedIt, true,  useIdealRrc), TestCase::EXTENSIVE);
-          AddTestCase (new LteX2HandoverTestCase (  2,    1,    hel1, hel1name, true, *schedIt, true,  useIdealRrc), TestCase::EXTENSIVE);
+          AddTestCase (new LteX2HandoverTestCase (  2,    1,    hel1, hel1name, true, *schedIt, true,  false), TestCase::EXTENSIVE);
           AddTestCase (new LteX2HandoverTestCase (  2,    2,    hel1, hel1name, true, *schedIt, true,  useIdealRrc), TestCase::EXTENSIVE);
           AddTestCase (new LteX2HandoverTestCase (  2,    0,    hel1, hel1name, true, *schedIt, false, useIdealRrc), TestCase::EXTENSIVE);
           AddTestCase (new LteX2HandoverTestCase (  2,    1,    hel1, hel1name, true, *schedIt, false, useIdealRrc), TestCase::EXTENSIVE);

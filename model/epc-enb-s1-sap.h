@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 #ifndef EPC_ENB_S1_SAP_H
@@ -25,6 +28,7 @@
 #include <stdint.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/ipv4-address.h>
+#include <vector>
 
 namespace ns3 {
 
@@ -89,6 +93,15 @@ public:
    * \param rnti 
    */
   virtual void UeContextRelease (uint16_t rnti) = 0;
+
+  /**
+   * Notify the MME that the data radio bearer setup is completed,
+   * so the buffered downlink packets can be sent to UE through the respective bearers
+   * 
+   *
+   * \param imsi the UE IMSI
+   */
+  virtual void NotifyDataRadioBearerSetupCompleted(uint64_t imsi)=0;
     
 };
   
@@ -141,7 +154,30 @@ public:
    *  \param params
    */
   virtual void PathSwitchRequestAcknowledge (PathSwitchRequestAcknowledgeParameters params) = 0;
-  
+
+  /**
+   * Parameters for a paging record of an UE required to construct the RRC paging message
+   * see 3GPP TS 36.331 6.2.2
+   * 
+   */
+  struct PagingParameters
+  {
+    uint64_t uePagingId;
+    uint16_t ueIdentityIndexValue;
+    enum CnDomain
+    {
+      PS, CS
+    } cnDomain;
+  };
+
+  /**
+   * Send the paging list to the RRC layer so the RRC paging message can be constructed
+   * 
+   *
+   * \param pagingList list of PagingParameters of UEs to be paged
+   */
+  virtual void SendPagingParameters (EpcEnbS1SapUser::PagingParameters uePagingParameters) = 0;
+
 };
   
 
@@ -169,6 +205,14 @@ public:
 
   virtual void PathSwitchRequest (PathSwitchRequestParameters params);
   virtual void UeContextRelease (uint16_t rnti);
+  /**
+   * Notify the MME that the data radio bearer setup is completed,
+   * so the buffered downlink packets can be sent to UE through the respective bearers
+   * 
+   *
+   * \param imsi the UE IMSI
+   */
+  virtual void NotifyDataRadioBearerSetupCompleted(uint64_t imsi);
 
 private:
   MemberEpcEnbS1SapProvider ();
@@ -211,6 +255,12 @@ void MemberEpcEnbS1SapProvider<C>::UeContextRelease (uint16_t rnti)
   m_owner->DoUeContextRelease (rnti);
 }
 
+template <class C>
+void MemberEpcEnbS1SapProvider<C>::NotifyDataRadioBearerSetupCompleted(uint64_t imsi)
+{
+  m_owner->DoNotifyDataRadioBearerSetupCompleted(imsi);
+}
+
 /**
  * Template for the implementation of the EpcEnbS1SapUser as a member
  * of an owner class of type C to which all methods are forwarded
@@ -230,6 +280,13 @@ public:
   // inherited from EpcEnbS1SapUser
   virtual void DataRadioBearerSetupRequest (DataRadioBearerSetupRequestParameters params);
   virtual void PathSwitchRequestAcknowledge (PathSwitchRequestAcknowledgeParameters params);
+  /**
+   * Send the paging list to the RRC layer so the RRC paging message can be constructed
+   * 
+   *
+   * \param pagingList list of PagingParameters of UEs to be paged
+   */
+  virtual void SendPagingParameters (EpcEnbS1SapUser::PagingParameters uePagingParameters);
 
 private:
   MemberEpcEnbS1SapUser ();
@@ -257,6 +314,12 @@ template <class C>
 void MemberEpcEnbS1SapUser<C>::PathSwitchRequestAcknowledge (PathSwitchRequestAcknowledgeParameters params)
 {
   m_owner->DoPathSwitchRequestAcknowledge (params);
+}
+
+template <class C>
+void MemberEpcEnbS1SapUser<C>::SendPagingParameters (EpcEnbS1SapUser::PagingParameters uePagingParameters)
+{
+  m_owner->ConstructPagingMsg (uePagingParameters);
 }
 
 } // namespace ns3

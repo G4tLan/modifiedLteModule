@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model) 
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for  uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 
@@ -26,6 +36,8 @@
 #include <ns3/packet.h>
 #include <ns3/ff-mac-common.h>
 #include <ns3/ff-mac-sched-sap.h>
+#include <ns3/mobility-model.h>
+#include "lte-control-messages.h"
 
 namespace ns3 {
 
@@ -60,6 +72,12 @@ public:
   * \returns MAC channel TTI delay
   */
   virtual uint8_t GetMacChTtiDelay () = 0;
+
+  /**
+   * Get the MobilityModel of the eNodeB
+   * 
+   */
+  virtual Ptr<MobilityModel> GetEnbMobility () = 0;
 
 
 };
@@ -100,9 +118,9 @@ public:
   /** 
    * notify the reception of a RACH preamble on the PRACH 
    * 
-   * \param prachId the ID of the preamble
+   * \param the preamble id message received from phy
    */
-  virtual void ReceiveRachPreamble (uint32_t prachId) = 0;
+  virtual void ReceiveRachPreamble (Ptr<RachPreambleLteControlMessage> msg) = 0;
 
   /**
    * \brief Returns to MAC level the UL-CQI evaluated

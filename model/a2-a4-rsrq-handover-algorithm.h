@@ -98,9 +98,6 @@ public:
   /// let the forwarder class access the protected and private members
   friend class MemberLteHandoverManagementSapProvider<A2A4RsrqHandoverAlgorithm>;
 
-  void setCellId(uint16_t cellId){
-    
-  }
 protected:
   // inherited from Object
   virtual void DoInitialize ();

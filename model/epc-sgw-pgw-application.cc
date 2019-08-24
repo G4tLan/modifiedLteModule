@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,11 @@
  *
  * Author: Jaume Nin <jnin@cttc.cat>
  *         Nicola Baldo <nbaldo@cttc.cat>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *     (support for RRC_CONNECTED->RRC_IDLE state transition)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de> (support for Paging)
  */
 
 
@@ -34,6 +41,8 @@ namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("EpcSgwPgwApplication");
 
+NS_OBJECT_ENSURE_REGISTERED (EpcSgwPgwApplication);
+
 /////////////////////////
 // UeInfo
 /////////////////////////
@@ -44,18 +53,43 @@ EpcSgwPgwApplication::UeInfo::UeInfo ()
   NS_LOG_FUNCTION (this);
 }
 
-void
+bool
 EpcSgwPgwApplication::UeInfo::AddBearer (Ptr<EpcTft> tft, uint8_t bearerId, uint32_t teid)
 {
   NS_LOG_FUNCTION (this << tft << teid);
-  m_teidByBearerIdMap[bearerId] = teid;
-  return m_tftClassifier.Add (tft, teid);
+//  m_teidByBearerIdMap[bearerId] = teid;
+  /**
+   * Bug:
+   * Bearers are added when eNodeB sends InitialUeMessage to EPC (upon receiving
+   * RrcConnectionRequest from the UE). Due to random access being attempted multiple
+   * times (due to expiration of timers or loss of messages, before a successful connection is
+   * established), eNodeB sends multiple (InitialUeMessage)s to EPC for same UE
+   * (due to receiving multiple (RrcConnectionRequest)s from the UE). Thus it causes many
+   * TFTs to be added to the classifier for the same bearer instead of having
+   * one TFT per bearer.
+   *
+   * Bug Fix:
+   * Hence, add the bearer to m_teidByBearerIdMap and m_tftClassifier
+   * only if it is not present.
+   * 
+   */
+  std::pair<std::map<uint8_t, uint32_t >::iterator,bool> ret;
+  ret=m_teidByBearerIdMap.insert ( std::pair<uint8_t, uint32_t>(bearerId, teid) );
+  if(ret.second==false)
+    {
+     return false; //If corresponding bearer already exists in the map, exit from method with false value
+    }
+  m_tftClassifier.Add (tft, teid);
+  return true;
 }
 
 void
 EpcSgwPgwApplication::UeInfo::RemoveBearer (uint8_t bearerId)
 {
   NS_LOG_FUNCTION (this << bearerId);
+  std::map<uint8_t, uint32_t >::iterator it = m_teidByBearerIdMap.find (bearerId);
+  if(it != m_teidByBearerIdMap.end ())
+  m_tftClassifier.Delete(it->second);//delete tft if not yet deleted
   m_teidByBearerIdMap.erase (bearerId);
 }
 
@@ -116,6 +150,11 @@ EpcSgwPgwApplication::GetTypeId (void)
   static TypeId tid = TypeId ("ns3::EpcSgwPgwApplication")
     .SetParent<Object> ()
     .SetGroupName("Lte")
+	.AddAttribute ("MaxDlBufferSize",
+	               "Maximum Size of the Downlink Packet Buffer (in Bytes)",
+	               UintegerValue (10 * 1024),
+	               MakeUintegerAccessor (&EpcSgwPgwApplication::m_maxDlBufferSize),
+	               MakeUintegerChecker<uint32_t> ())
     .AddTraceSource ("RxFromTun",
                      "Receive data packets from internet in Tunnel net device",
                      MakeTraceSourceAccessor (&EpcSgwPgwApplication::m_rxTunPktTrace),
@@ -187,7 +226,9 @@ EpcSgwPgwApplication::RecvFromTunDevice (Ptr<Packet> packet, const Address& sour
           uint32_t teid = it->second->Classify (packet);   
           if (teid == 0)
             {
-              NS_LOG_WARN ("no matching bearer for this packet");                   
+              NS_LOG_WARN ("no matching bearer for this packet");
+              NS_LOG_INFO("Buffer the packet directed to UE: " << it->second->GetImsi());
+              it->second->AddPacketToBuffer (packet);//Buffer the packets and start paging procedure
             }
           else
             {
@@ -213,7 +254,9 @@ EpcSgwPgwApplication::RecvFromTunDevice (Ptr<Packet> packet, const Address& sour
           uint32_t teid = it->second->Classify (packet);   
           if (teid == 0)
             {
-              NS_LOG_WARN ("no matching bearer for this packet");                   
+              NS_LOG_WARN ("no matching bearer for this packet");  
+              NS_LOG_INFO("Buffer the packet directed to UE: " << it->second->GetImsi());
+              it->second->AddPacketToBuffer (packet);//Buffer the packets and start paging procedure                 
             }
           else
             {
@@ -316,6 +359,12 @@ EpcSgwPgwApplication::AddUe (uint64_t imsi)
   NS_LOG_FUNCTION (this << imsi);
   Ptr<UeInfo> ueInfo = Create<UeInfo> ();
   m_ueInfoByImsiMap[imsi] = ueInfo;
+//Set the initial values for the paging parameters
+  ueInfo->m_maxDlBufferSize =m_maxDlBufferSize;
+  ueInfo->m_dlBufferSize=0;
+  ueInfo->m_dlDataNotificationFlag=false;
+  ueInfo->m_imsi=imsi;
+  ueInfo->m_epcSgwPgwApplication=this;
 }
 
 void 
@@ -362,10 +411,11 @@ EpcSgwPgwApplication::DoCreateSessionRequest (EpcS11SapSgw::CreateSessionRequest
       // management algorithm. 
       NS_ABORT_IF (m_teidCount == 0xFFFFFFFF);
       uint32_t teid = ++m_teidCount;  
-      ueit->second->AddBearer (bit->tft, bit->epsBearerId, teid);
+      if(!ueit->second->AddBearer (bit->tft, bit->epsBearerId, teid))
+        --m_teidCount;//if bearer is already added before, don't increment TEID count
 
       EpcS11SapMme::BearerContextCreated bearerContext;
-      bearerContext.sgwFteid.teid = teid;
+      bearerContext.sgwFteid.teid =  ueit->second->GetTeid(bit->epsBearerId);//get TEID for a bearer from epsBearerId
       bearerContext.sgwFteid.address = enbit->second.sgwAddr;
       bearerContext.epsBearerId =  bit->epsBearerId; 
       bearerContext.bearerLevelQos = bit->bearerLevelQos; 
@@ -432,6 +482,103 @@ EpcSgwPgwApplication::DoDeleteBearerResponse (EpcS11SapSgw::DeleteBearerResponse
     {
       //Function to remove de-activated bearer contexts from S-Gw and P-Gw side
       ueit->second->RemoveBearer (bit->epsBearerId);
+    }
+  //clear buffer when removing a bearer of an UE
+  ueit->second->m_dlDataNotificationFlag=false;
+  ueit->second->m_dlBufferSize=0;
+  ueit->second->m_dlBuffer.clear();
+}
+
+void
+EpcSgwPgwApplication::UeInfo::AddPacketToBuffer (Ptr<Packet> packet)
+{
+  NS_LOG_FUNCTION(this << packet);
+
+  if (m_dlBufferSize + packet->GetSize () <= m_maxDlBufferSize)
+    {
+      NS_LOG_LOGIC("Dl Buffer: New packet added");
+      m_dlBuffer.push_back (packet);
+      m_dlBufferSize += packet->GetSize ();
+      NS_LOG_LOGIC("NumOfPackets = " << m_dlBuffer.size());
+      NS_LOG_LOGIC("DlBufferSize = " << m_dlBufferSize);
+      NS_LOG_LOGIC("MaxDlBufferSize = " << m_maxDlBufferSize);
+      if (m_dlDataNotificationFlag == false)
+        {
+          //Send the downlink data notification message to the MME, see 3GPP TS 24.301 5.6.2
+          EpcS11SapMme::DownlinkDataNotificationMessage msg;
+          msg.imsi = GetImsi ();
+          m_epcSgwPgwApplication->m_s11SapMme->DownlinkDataNotification (msg);
+          m_dlDataNotificationFlag = true;
+        }
+    }
+  else
+    {
+      // Discard Application packet
+      NS_LOG_LOGIC("DlBuffer is full. Application packet discarded");
+      NS_LOG_LOGIC("MaxDlBufferSize = " << m_maxDlBufferSize);
+      NS_LOG_LOGIC("DlBufferSize    = " << m_dlBufferSize);
+      NS_LOG_LOGIC("packet size     = " << packet->GetSize ());
+    }
+}
+
+uint64_t
+EpcSgwPgwApplication::UeInfo::GetImsi ()
+{
+  return m_imsi;
+}
+
+uint32_t EpcSgwPgwApplication::UeInfo::GetTeid(uint8_t epsBearerId)
+{
+  std::map<uint8_t, uint32_t >::iterator it = m_teidByBearerIdMap.find (epsBearerId);
+  NS_ASSERT_MSG (it != m_teidByBearerIdMap.end (), "unknown epsBearerId " << epsBearerId);
+  return it->second;
+}
+
+void
+EpcSgwPgwApplication::DoSendBufferedDlPackets (uint64_t imsi)
+{
+  NS_LOG_FUNCTION(this << imsi);
+  std::map<uint64_t, Ptr<UeInfo> >::iterator it = m_ueInfoByImsiMap.find (imsi);
+  if (it == m_ueInfoByImsiMap.end ())
+    {
+      NS_LOG_WARN("unknown UE " << imsi);
+    }
+  else
+    {
+      Ipv4Address enbAddr = it->second->GetEnbAddr ();
+      while (!it->second->m_dlBuffer.empty ())
+        {
+          uint32_t teid = it->second->Classify (it->second->m_dlBuffer.front ());
+          if (teid == 0)
+            {
+              NS_LOG_WARN("no matching bearer for this packet");
+            }
+          else
+            {
+              SendToS1uSocket (it->second->m_dlBuffer.front (), enbAddr, teid);
+
+            }
+          it->second->m_dlBufferSize -= it->second->m_dlBuffer.front ()->GetSize ();
+          it->second->m_dlBuffer.pop_front ();
+        }
+      it->second->m_dlDataNotificationFlag = false;
+    }
+}
+
+void
+EpcSgwPgwApplication::DoDiscardBufferedDlPackets (uint64_t imsi)
+{
+  NS_LOG_FUNCTION(this << imsi);
+  std::map<uint64_t, Ptr<UeInfo> >::iterator it = m_ueInfoByImsiMap.find (imsi);
+  if (it == m_ueInfoByImsiMap.end ())
+    {
+      NS_LOG_WARN("unknown UE " << imsi);
+    }
+  else
+    {
+      it->second->m_dlBuffer.clear ();
+      it->second->m_dlBufferSize = 0;
+      it->second->m_dlDataNotificationFlag = false;
     }
 }
 

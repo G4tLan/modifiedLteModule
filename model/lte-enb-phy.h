@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging, uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #ifndef ENB_LTE_PHY_H
@@ -148,7 +158,7 @@ public:
 
   /**
    * \brief set the resource blocks (a.k.a. sub channels) to be used in the downlink for transmission
-   * 
+   *
    * \param mask a vector of integers, if the i-th value is j it means
    * that the j-th resource block is used for transmission in the
    * downlink. If there is no i such that the value of the i-th
@@ -167,7 +177,7 @@ public:
    */
   void SetDownlinkSubChannelsWithPowerAllocation (std::vector<int> mask);
   /**
-   * 
+   *
    * \return  a vector of integers, if the i-th value is j it means
    * that the j-th resource block is used for transmission in the
    * downlink. If there is no i such that the value of the i-th
@@ -305,7 +315,7 @@ public:
    * \param [in] rnti
    * \param [in] sinrLinear
    */
-  typedef void (* ReportUeSinrTracedCallback)
+  typedef void (*ReportUeSinrTracedCallback)
     (uint16_t cellId, uint16_t rnti, double sinrLinear, uint8_t componentCarrierId);
 
   /**
@@ -316,11 +326,10 @@ public:
    * \deprecated The non-const \c Ptr<SpectrumValue> argument is deprecated
    * and will be changed to \c Ptr<const SpectrumValue> in a future release.
    */
-  typedef void (* ReportInterferenceTracedCallback)
+  typedef void (*ReportInterferenceTracedCallback)
     (uint16_t cellId, Ptr<SpectrumValue> spectrumValue);
 
 private:
-
   // LteEnbCphySapProvider forwarded methods
   /**
    * Set bandwidth function
@@ -417,6 +426,12 @@ private:
    * \param srs the SRS
    */
   void CreateSrsReport (uint16_t rnti, double srs);
+
+  /**
+   * Get the MobilityModel of the eNodeB
+   *
+   */
+  Ptr<MobilityModel>  DoGetEnbMobility ();
 
   /**
    * List of RNTI of attached UEs. Used for quickly determining whether a UE is
@@ -516,6 +531,7 @@ private:
    * PhyTransmissionStatParameters.
    */
   TracedCallback<PhyTransmissionStatParameters> m_dlPhyTransmission;
+
 
 }; // end of `class LteEnbPhy`
 

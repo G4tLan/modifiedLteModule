@@ -457,6 +457,14 @@ private:
    */
   void DoPathSwitchRequestAcknowledge (EpcEnbS1SapUser::PathSwitchRequestAcknowledgeParameters params);  
   
+  /**
+   * Send the paging list to the RRC layer so the RRC paging message can be constructed
+   * 
+   *
+   * \param pagingList list of PagingParameters of UEs to be paged
+   */
+  void ConstructPagingMsg (EpcEnbS1SapUser::PagingParameters uePagingParameters);
+
   EpcEnbS1SapProvider* m_s1SapProvider; ///< S1 SAP provider
   EpcEnbS1SapUser* m_s1SapUser; ///< S1 SAP user
   

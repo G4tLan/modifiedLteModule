@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model) 
+ *
+ *  Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for Paging, uplink synchronization;
+ *    integrated the RACH realistic model
+ *    (taken from Lena-plus(work of Michele Polese)) and also enhanced the module)
  */
 
 #ifndef LTE_CONTROL_MESSAGES_H
@@ -27,6 +37,7 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/lte-rrc-sap.h>
 #include <list>
+#include "ns3/vector.h"
 
 namespace ns3 {
 
@@ -61,6 +72,10 @@ public:
     RAR, // Random Access Response
     MIB, // Master Information Block
     SIB1, // System Information Block Type 1
+    TAC, //Timing Advance Command MAC CE
+    CRNTI,//C-RNTI MAC CE
+    CRI,//UE contention resolution identity MAC CE
+    PAGING
   };
 
   LteControlMessage (void);
@@ -259,9 +274,51 @@ public:
    */
   uint32_t GetRapId () const;
 
+  /** 
+   * 
+   * \param imsi the unique UE identifier
+   */
+  void SetImsi (uint64_t imsi);
+
+  /**
+   * 
+   * \return imsi the unique UE identifier
+   */
+  uint64_t GetImsi (void) const;
+
+
+  /** 
+   * 
+   * \param time at which the upper layers ask to generate and tx the ra preamble
+   */
+  void SetStartTime (Time time);
+
+  /**
+   * 
+   * \return time at which the upper layers ask to generate and tx the ra preamble
+   */
+  Time GetStartTime (void) const;
+
+  /**
+   * internal: Used by LteSpectrumPhy to set the distance between UE and eNB in order to handle 
+   * preamble collision at LteEnbMac
+   * \param the position
+   * 
+   */
+  void SetPosition (Vector position);
+
+  /**
+   * \return the position of the node
+   * 
+   */
+  Vector GetPosition(void) const;
+
+
 private:
   uint32_t m_rapId; ///< the RAPID
-
+  uint64_t m_imsi;
+  Time m_time;
+  Vector m_position;
 };
 
 
@@ -288,6 +345,20 @@ public:
    * \return  the RA-RNTI, see 3GPP TS 36.321 5.1.4
    */
   uint16_t GetRaRnti () const;
+
+  /** 
+   * 
+   * \param backoffIndicator the BI, see 3GPP TS 36.321 5.1.4 and Table 7.2-1
+   * 
+   */
+  void SetBackoffIndicator (uint16_t backoffIndicator);
+
+  /** 
+   * 
+   * \return  backoffIndicator the BI, see 3GPP TS 36.321 5.1.4 and Table 7.2-1
+   * 
+   */
+  uint16_t GetBackoffIndicator () const;
 
   /**
    * a MAC RAR and the corresponding RAPID subheader 
@@ -321,6 +392,7 @@ public:
 private:
   std::list<Rar> m_rarList; ///< RAR list
   uint16_t m_raRnti; ///< RA RNTI
+  uint16_t m_backoffIndicator;
 
 };
 
@@ -401,6 +473,177 @@ private:
   LteRrcSap::SystemInformationBlockType1 m_sib1; ///< SIB1
 
 }; // end of class Sib1LteControlMessage
+
+/**
+ * \ingroup lte
+ * The downlink TacLteControlMessage defines the specific
+ * extension of the MacCeListElement_s for sending the
+ * timing advance commands.
+ * See 3GPP TS 36.321 6.1.3.5.
+ * 
+ */
+class TacLteControlMessage : public LteControlMessage
+{
+public:
+  TacLteControlMessage (void);
+  virtual ~TacLteControlMessage (void);
+
+  /**
+  * \brief add a Timing advance command MAC CE into the message.
+  * \param tac the Timing advance command MAC CE
+  */
+  void SetTac (MacCeListElement_s tac);
+
+  /**
+  * \brief Get Timing advance command MAC CE
+  * \return Timing advance command MAC CE
+  */
+  MacCeListElement_s GetTac (void) const;
+
+  /**
+   * \brief Add the timeAlignmentTimer value to the msg
+   * \param timeAlignmentTimer the timeAlignmentTimer value
+   */
+  void SetTimeAlignmentTimer (uint16_t timeAlignmentTimer);
+
+  /**
+   * \brief Get TimeAlignmentTimer value
+   * \return the timeAlignmentTimer value
+   */
+  uint16_t GetTimeAlignmentTimer() const;
+
+private:
+  MacCeListElement_s m_tac; ///< Tac
+  uint16_t m_timeAlignmentTimer; //(values: 500, 750, 1280, 1920, 2560, 5120, 10240 or infinity sf)
+
+};
+
+/**
+ * \ingroup lte
+ * The downlink CRntiLteControlMessage defines the specific
+ * extension of the MacCeListElement_s for sending CRNTI MAC CE.
+ * The msg is sent during RACH carried out for UE in uplink
+ * non-synchronized RRC Connected State when uplink data arrives.
+ * See 3GPP TS 36.321 6.1.3.2.
+ * 
+ */
+class CRntiLteControlMessage : public LteControlMessage
+{
+public:
+  CRntiLteControlMessage (void);
+  virtual ~CRntiLteControlMessage (void);
+
+  /**
+  * \brief add the C-RNTI MAC CE into the message.
+  * \param crnti the C-RNTI MAC CE
+  */
+  void SetCRnti (MacCeListElement_s crnti);
+
+  /**
+  * \brief Get CRnti MAC CE
+  * \return CRnti MAC CE
+  */
+  MacCeListElement_s GetCRnti (void) const;
+
+  /**
+    * \brief add the temp C-RNTI into the message
+    * assigned to the UE during RACH. Used to identify the UEs
+    * from which this msg was received at the eNodeB
+    * \param tempRnti the temp C-RNTI assigned to one or more UEs
+    */
+    void SetTempRnti (uint16_t tempRnti);
+
+    /**
+    * \brief Get the temp C-RNTI
+    * \return the temp C-RNTI
+    */
+    uint16_t GetTempRnti (void) const;
+
+private:
+  MacCeListElement_s m_crnti; ///< C-RNTI MAC CE
+  uint16_t m_tempRnti;///<temp C-RNTI
+
+};
+
+/**
+ * \ingroup lte
+ * The downlink CriLteControlMessage defines the specific
+ * messages for sending
+ * UE Contention Resolution Identity MAC CE to resolve contention.
+ * See 3GPP TS 36.321 6.1.3.4.
+ * 
+ */
+class CriLteControlMessage : public LteControlMessage
+{
+public:
+	CriLteControlMessage (void);
+  virtual ~CriLteControlMessage (void);
+
+  /**
+  * \brief add the UE Contention Resolution Identity into the message.
+  * \param ueContentionResolutionIdentity the UE identity to resolve contention (here, the UE IMSI)
+  */
+  void SetUeContentionResolutionIdentity (uint64_t ueContentionResolutionIdentity);
+
+  /**
+  * \brief Get the UE Contention Resolution Identity
+  * \return the UE Contention Resolution Identity
+  */
+  uint64_t GetUeContentionResolutionIdentity (void) const;
+
+  /**
+   * \brief add the RNTI assigned to the UE into the message
+   * \param rnti the RNTI assigned to the UE
+   */
+  void SetRnti (uint16_t rnti);
+
+  /**
+  * \brief Get the RNTI of the UE
+  * \return the RNTI of the UE
+  */
+  uint16_t GetRnti () const;
+
+private:
+  uint64_t m_ueContentionResolutionIdentity; //IMSI of the UE
+  uint16_t m_rnti;///< C-RNTI
+};
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * The downlink PagingLteControlMessage defines the specific
+ * messages for sending paging messages
+ * See 3GPP TS 36.331 6.2.2.
+ * 
+ */
+class PagingLteControlMessage : public LteControlMessage
+{
+public:
+  /**
+   * \brief Create a new instance of RrcPagingMessage control message.
+   */
+  PagingLteControlMessage (void);
+
+  /**
+   * \brief Replace the RrcPagingMessage content of this control message.
+   * \param mib the desired RrcPagingMessage content
+   */
+  void SetRrcPagingMsg (LteRrcSap::RrcPagingMessage msg);
+
+  /**
+   * \brief Retrieve the RrcPagingMessage content from this control message.
+   * \return the current RrcPagingMessage content that this control message holds
+   */
+  LteRrcSap::RrcPagingMessage GetRrcPagingMsg () const;
+
+  uint16_t GetPRnti() const;
+
+private:
+  LteRrcSap::RrcPagingMessage m_pagingMsg; ///< RrcPagingMessage
+  uint16_t m_pRnti;
+
+}; // end of class PagingLteControlMessage
 
 
 } // namespace ns3

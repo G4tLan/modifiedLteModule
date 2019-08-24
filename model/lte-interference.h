@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009 CTTC
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +18,12 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model: msg3 collisions)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (integrated the RACH realistic model (taken from Lena-plus(work of Michele Polese)))
  */
 
 
@@ -90,13 +98,20 @@ public:
    */
   void StartRx (Ptr<const SpectrumValue> rxPsd);
 
+  /**
+   * notify that the PHY is starting a msg3 RX attempt and handle possible collisions
+   * 
+   * @param rxPsd the power spectral density of the signal being RX
+   */
+  void StartRxMsg3 (Ptr<const SpectrumValue> rxPsd);
+
 
   /**
    * notify that the RX attempt has ended. The receiving PHY must call
    * this method when RX ends or RX is aborted.
-   *
+   * Extended for msg3 collision support from lena plus
    */
-  void EndRx ();
+  bool EndRx ();
 
 
   /**
@@ -157,6 +172,7 @@ private:
 
   uint32_t m_lastSignalId; ///< the last signal ID
   uint32_t m_lastSignalIdBeforeReset; ///< the last signal ID before reset
+  uint32_t m_msg3Collisions;
 
   /** all the processor instances that need to be notified whenever
   a new interference chunk is calculated */

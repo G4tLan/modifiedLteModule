@@ -1,6 +1,7 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 TELEMATICS LAB, DEE - Politecnico di Bari
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,9 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
  */
 
 #include <ns3/waveform-generator.h>
@@ -78,6 +82,7 @@ LtePhy::DoDispose ()
   NS_LOG_FUNCTION (this);
   m_packetBurstQueue.clear ();
   m_controlMessagesQueue.clear ();
+  m_prachMessageQueue.clear ();
   m_downlinkSpectrumPhy->Dispose ();
   m_downlinkSpectrumPhy = 0;
   m_uplinkSpectrumPhy->Dispose ();
@@ -189,6 +194,7 @@ LtePhy::GetRbgSize (void) const
 void
 LtePhy::SetMacPdu (Ptr<Packet> p)
 {
+  NS_LOG_INFO("Added macpdu to m_packetBurstQueue at size " << m_packetBurstQueue.size () - 1 );
   m_packetBurstQueue.at (m_packetBurstQueue.size () - 1)->AddPacket (p);
 }
 
@@ -219,6 +225,14 @@ LtePhy::SetControlMessages (Ptr<LteControlMessage> m)
   m_controlMessagesQueue.at (m_controlMessagesQueue.size () - 1).push_back (m);
 }
 
+
+void
+LtePhy::SetRachPreambleMessages (Ptr<LteControlMessage> m)
+{
+  NS_LOG_FUNCTION (this);
+  m_prachMessageQueue.at (m_prachMessageQueue.size () - 1).push_back (m);
+}
+
 std::list<Ptr<LteControlMessage> >
 LtePhy::GetControlMessages (void)
 {
@@ -236,6 +250,29 @@ LtePhy::GetControlMessages (void)
       m_controlMessagesQueue.erase (m_controlMessagesQueue.begin ());
       std::list<Ptr<LteControlMessage> > newlist;
       m_controlMessagesQueue.push_back (newlist);
+      std::list<Ptr<LteControlMessage> > emptylist;
+      return (emptylist);
+    }
+}
+
+
+std::list<Ptr<LteControlMessage> >
+LtePhy::GetRachPreambleMessages (void)
+{
+  NS_LOG_FUNCTION (this);
+  if (m_prachMessageQueue.at (0).size () > 0)
+    {
+      std::list<Ptr<LteControlMessage> > ret = m_prachMessageQueue.at (0);
+      m_prachMessageQueue.erase (m_prachMessageQueue.begin ());
+      std::list<Ptr<LteControlMessage> > newlist;
+      m_prachMessageQueue.push_back (newlist);
+      return (ret);
+    }
+  else
+    {
+      m_prachMessageQueue.erase (m_prachMessageQueue.begin ());
+      std::list<Ptr<LteControlMessage> > newlist;
+      m_prachMessageQueue.push_back (newlist);
       std::list<Ptr<LteControlMessage> > emptylist;
       return (emptylist);
     }

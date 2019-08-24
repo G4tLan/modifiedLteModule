@@ -59,7 +59,6 @@ public:
   /// let the forwarder class access the protected and private members
   friend class MemberLteHandoverManagementSapProvider<NoOpHandoverAlgorithm>;
 
-  void setCellId(uint16_t cellId){}
 protected:
   // inherited from Object
   virtual void DoInitialize ();
@@ -67,7 +66,6 @@ protected:
 
   // inherited from LteHandoverAlgorithm as a Handover Management SAP implementation
   void DoReportUeMeas (uint16_t rnti, LteRrcSap::MeasResults measResults);
-
 
 private:
   /// Interface to the eNodeB RRC instance.

@@ -1,6 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +19,14 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  *         Marco Miozzo <mmiozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model) 
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #ifndef LTE_ENB_CMAC_SAP_H
@@ -26,6 +36,7 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/lte-common.h>
+#include <ns3/nstime.h>
 
 namespace ns3 {
 
@@ -100,6 +111,14 @@ public:
 
 
   /**
+   * release all the existing logical channels for a given rnti
+   *
+   * \param rnti
+   * 
+   */
+  virtual void ReleaseLc (uint16_t rnti) = 0;
+
+  /**
    * release an existing logical channel
    *
    * \param rnti
@@ -139,6 +158,10 @@ public:
     uint8_t numberOfRaPreambles; ///< number of RA preambles
     uint8_t preambleTransMax; ///< preamble transmit maximum
     uint8_t raResponseWindowSize; ///< RA response window size
+    uint8_t pRachConfigurationIndex;
+    int8_t powerRampingStep;
+    int8_t preambleInitialReceivedTargetPower;
+    uint8_t contentionResolutionTimer;
   };
 
   /** 
@@ -166,6 +189,39 @@ public:
    * \return  the newly allocated random access preamble 
    */
   virtual AllocateNcRaPreambleReturnValue AllocateNcRaPreamble (uint16_t rnti) = 0;
+
+  /**
+   * Add UE's IMSI to a map with RNTI as the key so that UE's mobility model
+   * can be retrieved to perform timing advance calculation
+   * 
+   *
+   * \param rnti the RNTI of the UE
+   * \param imsi the IMSI of the UE
+   */
+  virtual void SetRntiImsiMap(uint16_t rnti, uint64_t imsi)=0;
+
+  /**
+   * Start the parallel time alignment timer of the UE connected to the eNodeB
+   * whenever RAR or TAC Ctrl msg is received by the UE.
+   * This timer is started at the same time as the UE's time alignment timer
+   * to maintain synchronization and ensure no assert messages
+   * are triggered or error occurs if the timers time out at different times.
+   * 
+   *
+   * \param timeAlignmentTimer the duration of the time alignment timer
+   * \param rnti the RNTI of the UE whose timer at the eNodeB has to be restarted
+   */
+  virtual void StartTimeAlignmentTimer (Time timeAlignmentTimer, uint16_t rnti)=0;
+
+  /**
+   * Indicate to MAC, msg 4 (RRC connection setup or RRC connection reconfiguration)
+   * is ready for transmission so that contention resolution MAC CE (CRI ctrl msg)
+   * can be sent in the same sub frame as msg4
+   * 
+   *
+   * \param rnti the RNTI of the UE whose message 4 is ready for transmission
+   */
+  virtual void SetMsg4Ready(uint16_t rnti)=0;
 
 };
 
@@ -219,6 +275,82 @@ public:
    * \param params 
    */
   virtual void RrcConfigurationUpdateInd (UeConfig params) = 0;
+
+  /**
+   * Notify the RRC that the time alignment timer has expired
+   * and UE has lost its uplink synchronization with the enodeB.
+   * Only the SRS resource (SrsConfigurationIndex) assigned for that UE is released
+   * since other PUCCH resources are ideal. UE is not considered to have gone out-of-sync
+   * during the handover procedure to ensure no unexpected errors occur
+   * 
+   *
+   * \param rnti the C-RNTI identifying the UE which has gone out-of-sync
+   * \return true if SRS resource was released indicating out of sync is considered
+   */
+  virtual bool NotifyUplinkOutOfSync(uint16_t rnti)=0;
+
+  /**
+   * Send a RRC connection reconfiguration message once
+   * random access is completed in RRC_CONNECTED state to reconfigure
+   * the PUCCH/SRS resources which were released when UE went out of sync.
+   * Contention resolution MAC CE (CRI ctrl msg) is sent along with this msg
+   * in the same subframe to resolve the contention for contention based
+   * random access in RRC_CONNECTED state
+   * 
+   *
+   * \param rnti the C-RNTI identifying the user
+   */
+  virtual void SendConnectionReconfigurationMsg(uint16_t rnti)=0;
+
+
+  /**
+   * Send a notification to the UE through RRC protocol in a ideal
+   * way to restart the inactivity timer whenever DL/UL data transfer occurs
+   * 
+   *
+   * \param rnti the C-RNTI identifying the user
+   */
+  virtual void NotifyRrcToRestartInactivityTimer(uint16_t rnti)=0;
+
+  /**
+   * If random access fails in RRC_CONNECTED state due to
+   * max preambles reached, then RRC connection release is sent to
+   * the UE through RRC protocol in a ideal way to ensure the UE
+   * moves back to the IDLE state. This ideal way of sending RRC
+   * connection release is required to avoid unwanted tracing
+   * errors if the msg is lost.
+   * 
+   *
+   * \param rnti the C-RNTI identifying the user
+   */
+  virtual void NotifyRandomAccessFailure(uint16_t rnti)=0;
+
+  /**
+   * This method is executed when RAR is sent. For
+   * RACH in UE connected state, the (RNTI, IMSI) map and
+   * timing advance is updated immediately as the UE mobility model
+   * can be accessed using the IMSI. If the RRC connection is yet to be
+   * established, then the map and timing advance are only updated
+   * after RRC Connection Request is received.
+   * 
+   *
+   * \param rnti the C-RNTI identifying the user
+   */
+  virtual void CheckIfUeConnected(uint16_t rnti)=0;
+
+  /**
+   * This method is executed to decide if the non contention based
+   * preamble has to reused or not upon preamble expiry. If the random access
+   * in connected mode is completed, then the preamble can be reused by other UEs.
+   * If not, the same UE retains the preamble and other available preambles is
+   * assigned to the required UEs.
+   * 
+   *
+   * \param rnti the C-RNTI identifying the user
+   * \return true if the random access in connected mode is completed
+   */
+  virtual bool IsRandomAccessCompleted(uint16_t rnti)=0;
+
 };
 
 

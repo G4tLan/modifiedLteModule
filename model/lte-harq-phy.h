@@ -1,6 +1,7 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +17,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo  <marco.miozzo@cttc.es>
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *        (support for uplink synchronization)
  */
 
 
@@ -137,7 +141,11 @@ public:
   */
   void ResetUlHarqProcessStatus(uint16_t rnti, uint8_t id);
   
-  
+  /**
+   * Flush the HARQ buffers
+   * \param rnti the RNTI of the UE
+   */
+  void ClearDlHarqProcesses(uint16_t rnti);
   
 
 

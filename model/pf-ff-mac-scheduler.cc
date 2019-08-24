@@ -1,6 +1,8 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
+ * Copyright (c) 2015, University of Padova, Dep. of Information Engineering, SIGNET lab.
+ * Copyright (c) 2018 Fraunhofer ESK
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,12 +18,20 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ *
+ * Modified by Michele Polese <michele.polese@gmail.com>
+ *    (support for RACH realistic model)
+ *
+ * Modified by Vignesh Babu <ns3-dev@esk.fraunhofer.de>
+ *    (support for uplink synchronization;
+ *    integrated the RACH realistic model and RRC_CONNECTED->RRC_IDLE
+ *    state transition (taken from Lena-plus(work of Michele Polese)) and also enhanced both the modules)
  */
 
 #include <ns3/log.h>
 #include <ns3/pointer.h>
 #include <ns3/math.h>
-
+#include "lte-prach-info.h"
 #include <ns3/simulator.h>
 #include <ns3/lte-amc.h>
 #include <ns3/pf-ff-mac-scheduler.h>
@@ -289,7 +299,19 @@ PfFfMacScheduler::DoCschedUeReleaseReq (const struct FfMacCschedSapProvider::Csc
     {
       m_nextRntiUl = 0;
     }
-
+  //to prevent errors after UE context deletion in scheduler
+  for (std::vector<DlInfoListElement_s>::iterator dit = m_dlInfoListBuffered.begin ();
+      dit != m_dlInfoListBuffered.end ();)
+    {
+      if (dit->m_rnti==params.m_rnti)
+        {
+          dit = m_dlInfoListBuffered.erase (dit);
+        }
+      else
+        {
+          ++dit;
+        }
+    }
   return;
 }
 
@@ -1346,7 +1368,9 @@ PfFfMacScheduler::EstimateUlSinr (uint16_t rnti, uint16_t rb)
 void
 PfFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::SchedUlTriggerReqParameters& params)
 {
-  NS_LOG_FUNCTION (this << " UL - Frame no. " << (params.m_sfnSf >> 4) << " subframe no. " << (0xF & params.m_sfnSf) << " size " << params.m_ulInfoList.size ());
+  uint32_t frameNo = (params.m_sfnSf >> 4);
+  uint32_t subframeNo = (0xF & params.m_sfnSf);
+  NS_LOG_FUNCTION(this << " UL - Frame no. " << frameNo << " subframe no. " << subframeNo << " size " << params.m_ulInfoList.size ());
 
   RefreshUlCqiMaps ();
   m_ffrSapProvider->ReportUlCqiInfo (m_ueCqi);
@@ -1363,8 +1387,19 @@ PfFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::Sched
   m_rachAllocationMap.clear ();
   m_rachAllocationMap.resize (m_cschedCellConfig.m_ulBandwidth, 0);
 
-  rbMap.resize (m_cschedCellConfig.m_ulBandwidth, false);
-  rbMap = m_ffrSapProvider->GetAvailableUlRbg ();
+  if (LtePrachInfo::IsPrachSff(frameNo, subframeNo))
+    {
+      if (params.m_ulInfoList.size () > 0)
+        {
+          NS_LOG_DEBUG("This will be a PRACH subframe, for now don't allow tx on PUSCH");
+        }
+      rbMap.resize(m_cschedCellConfig.m_ulBandwidth, true); // set as already allocated  
+    }
+  else
+    {
+      rbMap.resize (m_cschedCellConfig.m_ulBandwidth, false);
+      rbMap = m_ffrSapProvider->GetAvailableUlRbg ();
+    }
 
   for (std::vector<bool>::iterator it = rbMap.begin (); it != rbMap.end (); it++)
     {
