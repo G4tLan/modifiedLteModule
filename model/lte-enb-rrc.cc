@@ -2604,7 +2604,7 @@ void
 LteEnbRrc::DoRecvMeasurementReport (uint16_t rnti, LteRrcSap::MeasurementReport msg)
 {
   NS_LOG_FUNCTION (this << rnti);
-  GetUeManager (rnti)->RecvMeasurementReport (msg); 
+  GetUeManager (rnti)->RecvMeasurementReport (msg);
 }
 
 void
@@ -2674,7 +2674,7 @@ LteEnbRrc::DoRecvHandoverRequest (EpcX2SapUser::HandoverRequestParams req)
       m_handoverFailureTrace (GetUeManager (rnti)->GetImsi (), rnti,
                               ComponentCarrierToCellId (GetUeManager (rnti)->GetComponentCarrierId ()),
                               "Handover failure due to max preambles reached");
-      //Also remove the UE context at the target cell-
+      //Also remove the UE context at the target cell
       RemoveUe (rnti);
       return;
     }

@@ -92,7 +92,6 @@ protected:
   // inherited from LteHandoverAlgorithm as a Handover Management SAP implementation
   void DoReportUeMeas (uint16_t rnti, LteRrcSap::MeasResults measResults);
 
-
 private:
   /**
    * Determines if a neighbour cell is a valid destination for handover.

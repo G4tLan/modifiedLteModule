@@ -103,7 +103,6 @@ class LteUeRrc : public Object
   friend class MemberLteUeCcmRrcSapUser<LteUeRrc>;
 
 public:
-
   /**
    * The states of the UE RRC entity
    *

@@ -295,7 +295,6 @@ private:
   uint8_t m_componentCarrierId;
 
 private:
-
   /// LcInfo structure
   struct LcInfo
   {

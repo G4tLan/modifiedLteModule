@@ -506,7 +506,6 @@ LteSpectrumPhy::StartTxMsg3Frame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
 }
 
 
-
 bool
 LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration)
 {

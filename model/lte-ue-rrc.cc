@@ -1211,7 +1211,6 @@ void
 LteUeRrc::DoRecvSystemInformation (LteRrcSap::SystemInformation msg)
 {
   NS_LOG_FUNCTION (this << " RNTI " << m_rnti);
-  
   if (msg.haveSib2)
     {
       switch (m_state)
