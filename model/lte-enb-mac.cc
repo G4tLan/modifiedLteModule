@@ -1191,12 +1191,14 @@ LteEnbMac::DoReleaseLc (uint16_t rnti, uint8_t lcid)
 
   //Find user based on rnti and then erase lcid stored against the same
   std::map <uint16_t, std::map<uint8_t, LteMacSapUser*> >::iterator rntiIt = m_rlcAttached.find (rnti);
-  rntiIt->second.erase (lcid);
+  if(rntiIt != m_rlcAttached.end()){
+    rntiIt->second.erase (lcid);
 
-  struct FfMacCschedSapProvider::CschedLcReleaseReqParameters params;
-  params.m_rnti = rnti;
-  params.m_logicalChannelIdentity.push_back (lcid);
-  m_cschedSapProvider->CschedLcReleaseReq (params);
+    struct FfMacCschedSapProvider::CschedLcReleaseReqParameters params;
+    params.m_rnti = rnti;
+    params.m_logicalChannelIdentity.push_back (lcid);
+    m_cschedSapProvider->CschedLcReleaseReq (params);
+  }
 }
 
 void

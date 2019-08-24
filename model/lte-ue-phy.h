@@ -119,6 +119,10 @@ public:
    */
   LteUeCphySapProvider* GetLteUeCphySapProvider ();
 
+
+virtual bool Msg3Ready (){ return true;}
+
+virtual void UpdateRaRnti(uint32_t raRnti){};
   /**
   * \brief Set the CPHY SAP User
   * \param s a pointer to the SAP user

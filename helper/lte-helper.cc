@@ -714,7 +714,8 @@ LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
     }
 
 
-
+  
+  handoverAlgorithm->setCellId(cellId);
   dev->SetNode (n);
   dev->SetAttribute ("CellId", UintegerValue (cellId));
   dev->SetAttribute ("LteEnbComponentCarrierManager", PointerValue (ccmEnbManager));

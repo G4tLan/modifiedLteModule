@@ -504,6 +504,10 @@ LteSpectrumPhy::StartTxMsg3Frame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
   m_msg3 = true;
   return StartTxDataFrame(pb, ctrlMsgList, duration);
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> RLF_algo
 
 
 bool

@@ -714,6 +714,8 @@ public:
     std::list<MeasResultEutra> measResultListEutra; ///< measure result list eutra
     bool haveScellsMeas; ///< has SCells measure
     MeasResultServFreqList measScellResultList; ///< measure SCell result list
+    Vector uePosition;		
+    uint64_t imsi;
   };
 
   // Messages

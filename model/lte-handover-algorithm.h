@@ -24,6 +24,7 @@
 
 #include <ns3/object.h>
 #include <ns3/lte-rrc-sap.h>
+#include <map>
 
 namespace ns3 {
 
