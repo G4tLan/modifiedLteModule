@@ -68,6 +68,7 @@ class LteHandoverManagementSapUser
 {
 public:
   virtual ~LteHandoverManagementSapUser ();
+  virtual void UpdateUEMeasReportConfig(LteRrcSap::ReportConfigEutra reportConfig) = 0;
 
   /**
    * \brief Request a certain reporting configuration to be fulfilled by the UEs
@@ -166,6 +167,7 @@ public:
 
   // inherited from LteHandoverManagementSapUser
   virtual uint8_t AddUeMeasReportConfigForHandover (LteRrcSap::ReportConfigEutra reportConfig);
+  virtual void UpdateUEMeasReportConfig(LteRrcSap::ReportConfigEutra reportConfig);
   virtual void TriggerHandover (uint16_t rnti, uint16_t targetCellId);
 
 private:
@@ -187,6 +189,13 @@ uint8_t
 MemberLteHandoverManagementSapUser<C>::AddUeMeasReportConfigForHandover (LteRrcSap::ReportConfigEutra reportConfig)
 {
   return m_owner->DoAddUeMeasReportConfigForHandover (reportConfig);
+}
+
+template <class C>
+void
+MemberLteHandoverManagementSapUser<C>::UpdateUEMeasReportConfig (LteRrcSap::ReportConfigEutra reportConfig)
+{
+  return m_owner->DoUpdateMeasReportConfigForHandover (reportConfig);
 }
 
 

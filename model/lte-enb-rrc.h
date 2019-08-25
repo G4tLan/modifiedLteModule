@@ -1325,6 +1325,8 @@ private:
    * \returns measure ID
    */
   uint8_t DoAddUeMeasReportConfigForHandover (LteRrcSap::ReportConfigEutra reportConfig);
+
+  void DoUpdateMeasReportConfigForHandover(LteRrcSap::ReportConfigEutra reportConfig);
   /**
    * Add UE measure report config for component carrier function
    *

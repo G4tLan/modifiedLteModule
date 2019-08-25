@@ -2287,6 +2287,21 @@ LteEnbRrc::AddUeMeasReportConfig (LteRrcSap::ReportConfigEutra config)
   return nextId;
 }
 
+
+void
+LteEnbRrc::DoUpdateMeasReportConfigForHandover(LteRrcSap::ReportConfigEutra reportConfig){
+  for(auto it = m_ueMeasConfig.reportConfigToAddModList.begin();
+      it != m_ueMeasConfig.reportConfigToAddModList.end(); ++it
+  )
+    {
+      if(reportConfig.eventId == it->reportConfigEutra.eventId)
+        {
+          it->reportConfigEutra = reportConfig;
+        }
+    }
+  //std::cout << "updating handover params" << std::endl;
+}
+
 void
 LteEnbRrc::ConfigureCell (std::map<uint8_t, Ptr<ComponentCarrierEnb> > ccPhyConf)
 {
