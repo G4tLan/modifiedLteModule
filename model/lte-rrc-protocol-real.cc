@@ -79,6 +79,15 @@ LteUeRrcProtocolReal::GetTypeId (void)
   return tid;
 }
 
+void
+LteEnbRrcProtocolReal::UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::MeasConfig mc){
+  auto it = m_enbRrcSapProviderMap.find(rnti);
+
+  if(it != m_enbRrcSapProviderMap.end()){
+    it->second->ApplyMeasConfig(mc);
+  }
+}
+
 void 
 LteUeRrcProtocolReal::SetLteUeRrcSapProvider (LteUeRrcSapProvider* p)
 {

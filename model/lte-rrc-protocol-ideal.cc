@@ -150,6 +150,11 @@ LteUeRrcProtocolIdeal::DoSendRrcConnectionReestablishmentRequest (LteRrcSap::Rrc
                         msg);
 }
 
+void
+LteUeRrcProtocolIdeal::DoApplyMeasConfig(LteRrcSap::MeasConfig mc) {
+  m_ueRrcSapProvider->ApplyMeasConfig(mc);
+}
+
 void 
 LteUeRrcProtocolIdeal::DoSendRrcConnectionReestablishmentComplete (LteRrcSap::RrcConnectionReestablishmentComplete msg)
 {
@@ -342,6 +347,15 @@ LteEnbRrcProtocolIdeal::DoSetupUe (uint16_t rnti, LteEnbRrcSapUser::SetupUeParam
   // completed 
   m_enbRrcSapProviderMap[rnti] = 0;
 
+}
+
+void
+LteEnbRrcProtocolIdeal::UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::MeasConfig mc){
+  auto it = m_enbRrcSapProviderMap.find(rnti);
+
+  if(it != m_enbRrcSapProviderMap.end()){
+    it->second->ApplyMeasConfig(mc);
+  }
 }
 
 void 

@@ -63,6 +63,7 @@ public:
    */
   static TypeId GetTypeId (void);
 
+  void DoApplyMeasConfig(LteRrcSap::MeasConfig mc);
   /**
    * Set LTE UE RRC SAP provider function
    *
@@ -234,6 +235,8 @@ public:
    * \param p LteUeRrcSapProvider *
    */
   void SetUeRrcSapProviderMap (uint64_t imsi, LteUeRrcSapProvider* p);
+
+  void UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::MeasConfig mc);
 
 private:
 

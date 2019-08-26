@@ -263,6 +263,8 @@ public:
    */
   void SetUeRrcSapProviderMap (uint64_t imsi, LteUeRrcSapProvider* p);
 
+  void UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::MeasConfig mc);
+
 private:
   // methods forwarded from LteEnbRrcSapUser
   /**

@@ -1072,6 +1072,8 @@ public:
    */
   virtual void CompleteSetup (CompleteSetupParameters params) = 0;
 
+  virtual void ApplyMeasConfig(LteRrcSap::MeasConfig mc) = 0;
+
   /**
    * \brief Receive a _SystemInformation_ message from the serving eNodeB
    *        during a system information acquisition procedure
@@ -1164,6 +1166,8 @@ public:
    * \param rnti the RNTI
    */
   virtual void RemoveUe (uint16_t rnti) = 0;
+
+  virtual void UpdateMeasConfig(uint16_t rnti, LteRrcSap::MeasConfig mc) = 0;
 
   /**
    * \brief Send a _SystemInformation_ message to all attached UEs
@@ -1533,11 +1537,19 @@ public:
   virtual void RecvRrcConnectionRelease (RrcConnectionRelease msg);
   virtual void RecvRrcConnectionReject (RrcConnectionReject msg);
   virtual void RecvNotificationOfUeInactivityTimerExpiry ();
+  virtual void ApplyMeasConfig(LteRrcSap::MeasConfig mc);
 
 private:
   MemberLteUeRrcSapProvider ();
   C* m_owner; ///< the owner class
 };
+
+template <class C>
+void
+MemberLteUeRrcSapProvider<C>::ApplyMeasConfig (LteRrcSap::MeasConfig mc)
+{
+  m_owner->ApplyMeasConfig(mc);
+}
 
 template <class C>
 MemberLteUeRrcSapProvider<C>::MemberLteUeRrcSapProvider (C* owner)
@@ -1633,6 +1645,7 @@ public:
 
   virtual void SetupUe (uint16_t rnti, SetupUeParameters params);
   virtual void RemoveUe (uint16_t rnti);
+  virtual void UpdateMeasConfig(uint16_t rnti, LteRrcSap::MeasConfig mc);
   virtual void SendSystemInformation (uint16_t cellId, SystemInformation msg);
   virtual void SendRrcConnectionSetup (uint16_t rnti, RrcConnectionSetup msg);
   virtual void SendRrcConnectionReconfiguration (uint16_t rnti, RrcConnectionReconfiguration msg);
@@ -1676,6 +1689,14 @@ MemberLteEnbRrcSapUser<C>::RemoveUe (uint16_t rnti)
 {
   m_owner->DoRemoveUe (rnti);
 }
+
+template<class C>
+void 
+MemberLteEnbRrcSapUser<C>::UpdateMeasConfig(uint16_t rnti, LteRrcSap::MeasConfig mc)
+{
+  m_owner->UpdateMeasConfigToUe(rnti,mc);
+}
+
 
 template <class C>
 void

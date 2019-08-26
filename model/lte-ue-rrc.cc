@@ -1823,6 +1823,7 @@ LteUeRrc::ApplyRadioResourceConfigDedicated (LteRrcSap::RadioResourceConfigDedic
 void
 LteUeRrc::ApplyMeasConfig (LteRrcSap::MeasConfig mc)
 {
+  //std::cout << "apply meas Config " << GetImsi() << std::endl;
   NS_LOG_FUNCTION (this);
 
   // perform the actions specified in 3GPP TS 36.331 section 5.5.2.1
