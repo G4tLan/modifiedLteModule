@@ -3076,7 +3076,7 @@ LteEnbRrc::RemoveUe (uint16_t rnti)
   it->second->CancelPendingEvents ();
   // fire trace to disconnect ue traces in stats calculators
   m_connectionReleaseTrace (imsi, ComponentCarrierToCellId (it->second->GetComponentCarrierId ()), rnti);
-  std::cout << "\t\t\t removint UE with rnti " << rnti << " IMSI " << it->second->GetImsi() << std::endl;
+  //std::cout << "\t\t\t removint UE with rnti " << rnti << " IMSI " << it->second->GetImsi() << std::endl;
   m_ueMap.erase (it);
   for (uint8_t i = 0; i < m_numberOfComponentCarriers; i++)
     {
