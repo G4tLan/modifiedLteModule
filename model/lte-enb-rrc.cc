@@ -2304,7 +2304,9 @@ LteEnbRrc::DoUpdateMeasReportConfigForHandover(LteRrcSap::ReportConfigEutra repo
 
 void 
 LteEnbRrc::UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::ReportConfigEutra reportConfig){
-  m_rrcSapUser->UpdateMeasConfig(rnti,m_ueMeasConfig);
+  for(auto it = m_ueMap.begin(); it != m_ueMap.end(); ++it){
+    m_rrcSapUser->UpdateMeasConfig(it->first,m_ueMeasConfig);
+  }
 }
 
 
