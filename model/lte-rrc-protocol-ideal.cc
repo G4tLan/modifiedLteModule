@@ -354,7 +354,9 @@ LteEnbRrcProtocolIdeal::UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::MeasConfi
   auto it = m_enbRrcSapProviderMap.find(rnti);
 
   if(it != m_enbRrcSapProviderMap.end()){
-    it->second->ApplyMeasConfig(mc);
+    if(it->second != 0){
+      it->second->ApplyMeasConfig(mc);
+    }
   }
 }
 
