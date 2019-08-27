@@ -2302,6 +2302,14 @@ LteEnbRrc::DoUpdateMeasReportConfigForHandover(LteRrcSap::ReportConfigEutra repo
   //std::cout << "updating handover params" << std::endl;
 }
 
+void
+LteEnbRrc::DoUpdateTransmissionPower(double power){
+    for (uint8_t i = 0; i < m_numberOfComponentCarriers; i++)
+    {
+      m_cphySapProvider.at (i)->SetPower(power);
+    }
+}
+
 void 
 LteEnbRrc::UpdateMeasConfigToUe(uint16_t rnti, LteRrcSap::ReportConfigEutra reportConfig){
   for(auto it = m_ueMap.begin(); it != m_ueMap.end(); ++it){

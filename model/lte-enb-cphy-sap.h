@@ -64,6 +64,7 @@ public:
    * \param dlBandwidth the DL bandwidth in PRBs
    */
   virtual void SetBandwidth (uint8_t ulBandwidth, uint8_t dlBandwidth) = 0;
+  virtual void SetPower (double power) = 0;
 
   /**
    * \param ulEarfcn the UL EARFCN
@@ -173,6 +174,7 @@ public:
   // inherited from LteEnbCphySapProvider
   virtual void SetCellId (uint16_t cellId);
   virtual void SetBandwidth (uint8_t ulBandwidth, uint8_t dlBandwidth);
+  virtual void SetPower (double power);
   virtual void SetEarfcn (uint32_t ulEarfcn, uint32_t dlEarfcn);
   virtual void AddUe (uint16_t rnti);
   virtual void RemoveUe (uint16_t rnti);
@@ -204,6 +206,13 @@ void
 MemberLteEnbCphySapProvider<C>::SetCellId (uint16_t cellId)
 {
   m_owner->DoSetCellId (cellId);
+}
+
+template <class C>
+void 
+MemberLteEnbCphySapProvider<C>::SetPower (double power)
+{
+  m_owner->SetTxPower (power);
 }
 
 
